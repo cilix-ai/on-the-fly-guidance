@@ -1,0 +1,17 @@
+# hyper parameters config for training
+DATASET:
+  NAME: ['IXI', 'OASIS']
+  TRAIN_SIZE: 200
+  VAL_SIZE: 20
+TRAIN:
+  NAME: ['TransMorph', 'VoxelMorph', 'ViT-V-Net']
+  LR: 1e-4
+  EPOCHS: 500
+  BATCH_SIZE: 1
+  LOSS: ['opt_loss', 'reg_loss']
+  LOSS_WEIGHT: [1, 0.02]
+OPT:
+  LR: 1e-1
+  ITERATIONS: 10
+  LOSS: ['ncc_loss', 'reg_loss']
+  LOSS_WEIGHT: [1, 1]

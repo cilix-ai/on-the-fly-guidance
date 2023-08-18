@@ -3,13 +3,18 @@ import torch, sys
 from torch.utils.data import Dataset
 from .data_utils import pkload
 import matplotlib.pyplot as plt
-
+import random
 import numpy as np
 
 
 class IXIBrainDataset(Dataset):
     def __init__(self, data_path, atlas_path, transforms):
-        self.paths = data_path
+        # data_path is a list
+        data_path.sort()
+        random.seed(42)
+        self.paths = random.sample(data_path, 200)
+        self.paths.sort()
+        
         self.atlas_path = atlas_path
         self.transforms = transforms
 
@@ -53,8 +58,13 @@ class IXIBrainDataset(Dataset):
 
 class IXIBrainInferDataset(Dataset):
     def __init__(self, data_path, atlas_path, transforms):
+        # data_path is a list
+        data_path.sort()
+        random.seed(42)
+        self.paths = random.sample(data_path, 20)
+        self.paths.sort()
+        
         self.atlas_path = atlas_path
-        self.paths = data_path
         self.transforms = transforms
 
     def one_hot(self, img, C):
@@ -84,7 +94,12 @@ class IXIBrainInferDataset(Dataset):
 
 class OASISBrainDataset(Dataset):
     def __init__(self, data_path, transforms):
-        self.paths = data_path
+        # data_path is a list
+        data_path.sort()
+        random.seed(42)
+        self.paths = random.sample(data_path, 200)
+        self.paths.sort()
+        
         self.transforms = transforms
 
     def one_hot(self, img, C):
@@ -118,7 +133,12 @@ class OASISBrainDataset(Dataset):
 
 class OASISBrainInferDataset(Dataset):
     def __init__(self, data_path, transforms):
-        self.paths = data_path
+        # data_path is a list
+        data_path.sort()
+        random.seed(42)
+        self.paths = random.sample(data_path, 20)
+        self.paths.sort()
+        
         self.transforms = transforms
 
     def one_hot(self, img, C):

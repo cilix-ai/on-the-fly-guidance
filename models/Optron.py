@@ -12,6 +12,8 @@ class Optron(nn.Module):
         Args:
             initial_flow (torch.Tensor): initial flow field
         """
+        super(Optron, self).__init__()
+        
         self.flow = nn.Parameter(initial_flow)
         self.img_size = (160, 192, 224)
         self.mode = 'bilinear'

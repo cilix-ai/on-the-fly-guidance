@@ -32,7 +32,7 @@ import torch.nn as nn
 import torch.nn.functional as nnf
 from torch.nn import Dropout, Softmax, Linear, Conv3d, LayerNorm
 from torch.nn.modules.utils import _pair, _triple
-import models.configs_ViTVNet as configs
+import models.config_ViTVNet as configs
 from torch.distributions.normal import Normal
 
 logger = logging.getLogger(__name__)
@@ -467,5 +467,5 @@ class VecInt(nn.Module):
         return vec
 
 CONFIGS = {
-    'ViT-V-Net': configs.get_3DReg_config(),
+    'ViT-V-Net': configs.get_3DPVTNet_config(),
 }

@@ -24,10 +24,10 @@ import argparse
 # parse the commandline
 parser = argparse.ArgumentParser()
 
-parser.add_argument('--train_dir', type=str, default='../../autodl-fs/IXI/Train/')
-parser.add_argument('--val_dir', type=str, default='../../autodl-fs/IXI/Val/')
+parser.add_argument('--train_dir', type=str, default='../autodl-fs/IXI_data/Train/')
+parser.add_argument('--val_dir', type=str, default='../autodl-fs/IXI_data/Val/')
 parser.add_argument('--dataset', type=str, default='IXI')
-parser.add_argument('--atlas_dir', type=str, default='../../autodl-fs/IXI/atlas.pkl')
+parser.add_argument('--atlas_dir', type=str, default='../autodl-fs/IXI_data/atlas.pkl')
 
 parser.add_argument('--model', type=str, default='TransMorph')
 
@@ -88,9 +88,9 @@ def main():
     '''
     Initialize spatial transformation function
     '''
-    reg_model = utils.register_model(config.img_size, 'nearest')
+    reg_model = utils.register_model(img_size, 'nearest')
     reg_model.cuda()
-    reg_model_bilin = utils.register_model(config.img_size, 'bilinear')
+    reg_model_bilin = utils.register_model(img_size, 'bilinear')
     reg_model_bilin.cuda()
 
     '''
@@ -118,20 +118,21 @@ def main():
         
         train_set = datasets.IXIBrainDataset(glob.glob(train_dir + '*.pkl'), atlas_dir, transforms=train_composed)
         val_set = datasets.IXIBrainInferDataset(glob.glob(val_dir + '*.pkl'), atlas_dir, transforms=val_composed)
-        train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True)
-        val_loader = DataLoader(val_set, batch_size=1, shuffle=False, num_workers=4, pin_memory=True, drop_last=True)
+        train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=0, pin_memory=True)
+        val_loader = DataLoader(val_set, batch_size=1, shuffle=False, num_workers=0, pin_memory=True, drop_last=True)
     elif args.dataset == "OASIS":
         train_composed = transforms.Compose([trans.NumpyType((np.float32, np.int16))])
         val_composed = transforms.Compose([trans.NumpyType((np.float32, np.int16))])
         train_set = datasets.OASISBrainDataset(glob.glob(train_dir + '*.pkl'), transforms=train_composed)
         val_set = datasets.OASISBrainInferDataset(glob.glob(val_dir + '*.pkl'), transforms=val_composed)
-        train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True)
-        val_loader = DataLoader(val_set, batch_size=1, shuffle=False, num_workers=4, pin_memory=True, drop_last=True)
+        train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=0, pin_memory=True)
+        val_loader = DataLoader(val_set, batch_size=1, shuffle=False, num_workers=0, pin_memory=True, drop_last=True)
     
     optimizer = optim.Adam(model.parameters(), lr=updated_lr, weight_decay=0, amsgrad=True)
     criterion = losses.NCC_vxm()
     criterions = [criterion]
     criterions += [losses.Grad3d(penalty='l2')]
+    criterions += [nn.MSELoss()]
     best_dsc = 0
     writer = SummaryWriter(log_dir='logs/'+save_dir)
 
@@ -155,11 +156,11 @@ def main():
             x_in = torch.cat((x,y), dim=1)
             output = model(x_in)
 
-            Optron = Optron(output[1].clone().detach())
-            Optron_optimizer = optim.Adam(Optron.parameters(), lr=args.optron_lr, weight_decay=0, amsgrad=True)
+            optron1 = Optron(output[1].clone().detach())
+            Optron_optimizer = optim.Adam(optron1.parameters(), lr=args.optron_lr, weight_decay=0, amsgrad=True)
             adjust_learning_rate(Optron_optimizer, epoch, max_epoch, args.optron_lr)
             for i in range(args.optron_epoch):
-                x_warped, optimized_flow = Optron(x)
+                x_warped, optimized_flow = optron1(x)
                 Optron_loss_ncc = criterions[0](x_warped, y) * weights[0]
                 Optron_loss_reg = criterions[1](optimized_flow, y) * weights[1]
                 Optron_loss = Optron_loss_ncc + Optron_loss_reg
@@ -168,7 +169,8 @@ def main():
                 Optron_loss.backward()
                 Optron_optimizer.step()
 
-            loss_mse = nn.MSELoss(optimized_flow, output[1])
+            x_warped, optimized_flow = optron1(x)
+            loss_mse = criterions[2](output[1], optimized_flow)
             loss_reg = criterions[1](optimized_flow, y) * 0.02
             loss = loss_mse + loss_reg
             loss_vals = [loss_mse, loss_reg]
@@ -182,12 +184,12 @@ def main():
                 y_in = torch.cat((y, x), dim=1)
                 output = model(y_in)
 
-                Optron = Optron(output[1].clone().detach())
-                Optron_optimizer = optim.Adam(Optron.parameters(), lr=args.optron_lr, weight_decay=0, amsgrad=True)
+                optron2 = Optron(output[1].clone().detach())
+                Optron_optimizer = optim.Adam(optron2.parameters(), lr=args.optron_lr, weight_decay=0, amsgrad=True)
                 adjust_learning_rate(Optron_optimizer, epoch, max_epoch, args.optron_lr)
 
                 for i in range(args.optron_epoch):
-                    y_warped, optimized_flow = Optron(y)
+                    y_warped, optimized_flow = optron2(y)
                     Optron_loss_ncc = criterions[0](y_warped, x) * weights[0]
                     Optron_loss_reg = criterions[1](optimized_flow, x) * weights[1]
                     Optron_loss = Optron_loss_ncc + Optron_loss_reg
@@ -196,7 +198,7 @@ def main():
                     Optron_loss.backward()
                     Optron_optimizer.step()
 
-                loss_mse = nn.MSELoss(optimized_flow, output[1])
+                loss_mse = criterions[2](optimized_flow, output[1])
                 loss_reg = criterions[1](optimized_flow, x) * 0.02
                 loss = loss_mse + loss_reg
                 loss_vals = [loss_mse, loss_reg]
@@ -289,7 +291,7 @@ if __name__ == '__main__':
     '''
     GPU configuration
     '''
-    GPU_iden = 1
+    GPU_iden = 0
     GPU_num = torch.cuda.device_count()
     print('Number of GPU: ' + str(GPU_num))
     for GPU_idx in range(GPU_num):

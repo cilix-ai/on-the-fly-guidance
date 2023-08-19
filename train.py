@@ -225,10 +225,8 @@ def main():
                 x_seg = data[2]
                 y_seg = data[3]
                 x_in = torch.cat((x, y), dim=1)
-                grid_img = mk_grid_img(8, 1, config.img_size)
                 output = model(x_in)
                 def_out = reg_model([x_seg.cuda().float(), output[1].cuda()])
-                def_grid = reg_model_bilin([grid_img.float(), output[1].cuda()])
                 dsc = utils.dice_val_VOI(def_out.long(), y_seg.long())
                 eval_dsc.update(dsc.item(), x.size(0))
                 print(eval_dsc.avg)
@@ -240,45 +238,14 @@ def main():
             'optimizer': optimizer.state_dict(),
         }, save_dir='experiments/'+save_dir, filename='dsc{:.3f}.pth.tar'.format(eval_dsc.avg))
         writer.add_scalar('DSC/validate', eval_dsc.avg, epoch)
-        plt.switch_backend('agg')
-        pred_fig = comput_fig(def_out)
-        grid_fig = comput_fig(def_grid)
-        x_fig = comput_fig(x_seg)
-        tar_fig = comput_fig(y_seg)
-        writer.add_figure('Grid', grid_fig, epoch)
-        plt.close(grid_fig)
-        writer.add_figure('input', x_fig, epoch)
-        plt.close(x_fig)
-        writer.add_figure('ground truth', tar_fig, epoch)
-        plt.close(tar_fig)
-        writer.add_figure('prediction', pred_fig, epoch)
-        plt.close(pred_fig)
         loss_all.reset()
     writer.close()
 
-def comput_fig(img):
-    img = img.detach().cpu().numpy()[0, 0, 48:64, :, :]
-    fig = plt.figure(figsize=(12,12), dpi=180)
-    for i in range(img.shape[0]):
-        plt.subplot(4, 4, i + 1)
-        plt.axis('off')
-        plt.imshow(img[i, :, :], cmap='gray')
-    fig.subplots_adjust(wspace=0, hspace=0)
-    return fig
 
 def adjust_learning_rate(optimizer, epoch, MAX_EPOCHES, INIT_LR, power=0.9):
     for param_group in optimizer.param_groups:
         param_group['lr'] = round(INIT_LR * np.power( 1 - (epoch) / MAX_EPOCHES ,power),8)
 
-def mk_grid_img(grid_step, line_thickness=1, grid_sz=(160, 192, 224)):
-    grid_img = np.zeros(grid_sz)
-    for j in range(0, grid_img.shape[1], grid_step):
-        grid_img[:, j+line_thickness-1, :] = 1
-    for i in range(0, grid_img.shape[2], grid_step):
-        grid_img[:, :, i+line_thickness-1] = 1
-    grid_img = grid_img[None, None, ...]
-    grid_img = torch.from_numpy(grid_img).cuda()
-    return grid_img
 
 def save_checkpoint(state, save_dir='models', filename='checkpoint.pth.tar', max_model_num=8):
     torch.save(state, save_dir+filename)

@@ -17,7 +17,6 @@ import models.TransMorph as TransMorph
 from models.VoxelMorph import VxmDense_1
 
 from models.Optron import Optron
-from csv_logger import log_csv
 
 import argparse
 
@@ -172,7 +171,7 @@ def main():
 
             x_warped, optimized_flow = optron1(x)
             loss_mse = criterions[2](output[1], optimized_flow)
-            loss_reg = criterions[1](optimized_flow, y) * 0.02
+            loss_reg = criterions[1](output[1], y) * 0.02
             loss = loss_mse + loss_reg
             loss_vals = [loss_mse, loss_reg]
             loss_all.update(loss.item(), y.numel())
@@ -200,7 +199,7 @@ def main():
                     Optron_optimizer.step()
 
                 loss_mse = criterions[2](optimized_flow, output[1])
-                loss_reg = criterions[1](optimized_flow, x) * 0.02
+                loss_reg = criterions[1](output[1], x) * 0.02
                 loss = loss_mse + loss_reg
                 loss_vals = [loss_mse, loss_reg]
                 
@@ -221,7 +220,10 @@ def main():
             for data in val_loader:
                 model.eval()
                 data = [t.cuda() for t in data]
-                x, y, x_seg, y_seg = data
+                x = data[0]
+                y = data[1]
+                x_seg = data[2]
+                y_seg = data[3]
                 x_in = torch.cat((x, y), dim=1)
                 output = model(x_in)
                 def_out = reg_model([x_seg.cuda().float(), output[1].cuda()])
@@ -229,7 +231,6 @@ def main():
                 eval_dsc.update(dsc.item(), x.size(0))
                 print(eval_dsc.avg)
         best_dsc = max(eval_dsc.avg, best_dsc)
-        log_csv(epoch, eval_dsc.avg, loss_all.avg)
         save_checkpoint({
             'epoch': epoch + 1,
             'state_dict': model.state_dict(),

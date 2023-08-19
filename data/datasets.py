@@ -136,7 +136,7 @@ class OASISBrainInferDataset(Dataset):
         # data_path is a list
         data_path.sort()
         random.seed(42)
-        self.paths = random.sample(data_path, 20)
+        self.paths = random.sample(data_path, 19)
         self.paths.sort()
         
         self.transforms = transforms

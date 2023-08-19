@@ -134,7 +134,6 @@ def main():
     criterions += [losses.Grad3d(penalty='l2')]
     criterions += [nn.MSELoss()]
     best_dsc = 0
-    writer = SummaryWriter(log_dir='logs/'+save_dir)
 
     for epoch in range(epoch_start, max_epoch):
         print('Training Starts')
@@ -210,7 +209,6 @@ def main():
 
             print('Iter {} of {} loss {:.4f}, Img Sim: {:.6f}, Reg: {:.6f}'.format(idx, len(train_loader), loss.item(), loss_vals[0].item(), loss_vals[1].item()))
 
-        writer.add_scalar('Loss/train', loss_all.avg, epoch)
         print('Epoch {} loss {:.4f}'.format(epoch, loss_all.avg))
         '''
         Validation
@@ -237,9 +235,7 @@ def main():
             'best_dsc': best_dsc,
             'optimizer': optimizer.state_dict(),
         }, save_dir='experiments/'+save_dir, filename='dsc{:.3f}.pth.tar'.format(eval_dsc.avg))
-        writer.add_scalar('DSC/validate', eval_dsc.avg, epoch)
         loss_all.reset()
-    writer.close()
 
 
 def adjust_learning_rate(optimizer, epoch, MAX_EPOCHES, INIT_LR, power=0.9):

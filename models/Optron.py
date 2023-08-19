@@ -4,20 +4,21 @@ import utils
 
 
 class Optron(nn.Module):
+    """
+    Optimization module for displacements field
+    Used to provide pseudo ground truth for training
+    """
     def __init__(self, initial_flow):
         """
-        Optimization module for displacements field
-        Used to provide pseudo ground truth for training
-
         Args:
             initial_flow (torch.Tensor): initial flow field
         """
         super(Optron, self).__init__()
-        
-        self.flow = nn.Parameter(initial_flow)
+
         self.img_size = (160, 192, 224)
         self.mode = 'bilinear'
 
+        self.flow = nn.Parameter(initial_flow)
         self.spatial_trans = utils.SpatialTransformer(self.img_size, self.mode)
 
     def forward(self, x):

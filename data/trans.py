@@ -27,7 +27,7 @@ class Base(object):
             # print(dim,shape) # 3, (240,240,155)
             self.sample(*shape)
 
-        if isinstance(img, collections.Sequence):
+        if isinstance(img, collections.abc.Sequence):
             return [self.tf(x, k) for k, x in enumerate(img)] # img:k=0,label:k=1
 
         return self.tf(img)

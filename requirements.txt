@@ -6,3 +6,4 @@ numpy
 timm
 ml_collections
 scikit-image
+pandas

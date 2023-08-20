@@ -467,5 +467,5 @@ class VecInt(nn.Module):
         return vec
 
 CONFIGS = {
-    'ViT-V-Net': configs.get_3DPVTNet_config(),
+    'ViT-V-Net': configs.get_3DReg_config(),
 }

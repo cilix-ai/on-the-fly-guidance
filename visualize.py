@@ -16,23 +16,19 @@ def plot_dsc(data):
     plt.xticks(np.arange(1, 500, 100))
     plt.legend()
     plt.savefig('./imgs/val_dsc.png')
-    
-def plot_loss(data):
-    # plt.figure(figsize=(15, 2.5))
-    plt.title('Train Loss')
+
+def plot(data, metric, save_dir):
+    if metric == 'Loss':
+        plt.title('Train Loss')
+    elif metric == 'DSC':
+        plt.title('Val DSC')
+    elif metric == 'Jdet':
+        plt.title('Val Jdet')
     plt.xlabel('Epoch')
     plt.plot(data, '-')
     # plt.xticks(np.arange(1, 500, 100))
-    plt.savefig('./imgs/train_loss.png')
-    
-def plot_Jdet(data):
-    # plt.figure(figsize=(15, 2.5))
-    plt.title('Val Jdet')
-    plt.xlabel('Epoch')
-    plt.plot(data, '-')
-    # plt.xticks(np.arange(1, 500, 100))
-    plt.savefig('./imgs/val_Jdet.png')
-    
+    plt.savefig(save_dir + metric + '.png')
+        
 def find_nearest_index(lst, target):
     for i in range(len(lst)):
         if lst[i] >= target:
@@ -72,13 +68,12 @@ if __name__ == '__main__':
     loop = read_csv(csv_file='?')
     normal = read_csv(csv_file='?')
     
-    plt.figure(1)
     compare(normal['DSC'], loop['DSC'])
     
-    # plt.figure(2)
-    # plot_loss(loop['Loss'])
-    # plot_loss(normal['Loss'])
+    # visualize train loss
+    plot(data=loop['Loss'], metric='Loss', save_dir='./imgs/xxx_opt_xxx/')
+    plot(data=normal['Loss'], metric='Loss', save_dir='./imgs/xxx_xxx/')
     
-    # plt.figure(3)
-    # plot_Jdet(loop['Jdet'])
-    # plot_Jdet(normal['Jdet'])
+    # visualize val Jdet
+    plot(data=loop['Jdet'], metric='Jdet', save_dir='./imgs/xxx_opt_xxx/')
+    plot(data=normal['Jdet'], metric='Jdet', save_dir='./imgs/xxx_xxx/')

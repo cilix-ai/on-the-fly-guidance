@@ -35,7 +35,7 @@ parser.add_argument('--optron_lr', type=float, default=1e-1)
 parser.add_argument('--epoch_start', type=int, default=0)
 parser.add_argument('--max_epoch', type=int, default=500)
 
-parser.add_argument('--optron_epoch', type=int, default=10)
+parser.add_argument('--optron_epoch', type=int, default=10, help='the number of iterations in optimization, 0 represents no optimization')
 
 args = parser.parse_args()
 
@@ -66,6 +66,8 @@ def main():
     atlas_dir = args.atlas_dir
     train_dir = args.train_dir
     val_dir = args.val_dir
+    optron_epoch = args.optron_epoch
+    
     weights_model = [1, 0.02] # loss weights of optimizer
     weights_opt = [1, 1] # loss weighs of model loss
     save_dir = '{}_{}_opt/'.format(args.model, args.dataset)
@@ -163,7 +165,6 @@ def main():
             x_in = torch.cat((x,y), dim=1)
             output = model(x_in)
 
-            #! directly optimize initial deformation field
             optron1 = Optron(output[1].clone().detach())
             Optron_optimizer = optim.Adam(optron1.parameters(), lr=args.optron_lr, weight_decay=0, amsgrad=True)
             adjust_learning_rate(Optron_optimizer, epoch, max_epoch, args.optron_lr)
@@ -192,12 +193,11 @@ def main():
                 y_in = torch.cat((y, x), dim=1)
                 output = model(y_in)
 
-                #! directly optimize initial deformation field
                 optron2 = Optron(output[1].clone().detach())
                 Optron_optimizer = optim.Adam(optron2.parameters(), lr=args.optron_lr, weight_decay=0, amsgrad=True)
                 adjust_learning_rate(Optron_optimizer, epoch, max_epoch, args.optron_lr)
 
-                for i in range(args.optron_epoch):
+                for i in range(optron_epoch):
                     y_warped, optimized_flow = optron2(y)
                     Optron_loss_ncc = criterions[0](y_warped, x) * weights_opt[0]
                     Optron_loss_reg = criterions[1](optimized_flow, x) * weights_opt[1]
@@ -235,11 +235,14 @@ def main():
                 x_in = torch.cat((x, y), dim=1)
                 output = model(x_in)
                 def_out = reg_model([x_seg.cuda().float(), output[1].cuda()])
-                dsc = utils.dice_val_VOI(def_out.long(), y_seg.long())
+                if args.dataset == "OASIS":
+                    dsc = utils.dice_OASIS(def_out.long(), y_seg.long())
+                elif args.dataset == "IXI":
+                    dsc = utils.dice_IXI(def_out.long(), y_seg.long())
+                eval_dsc.update(dsc.item(), x.size(0))
                 jac_det = utils.jacobian_determinant_vxm(output[1].detach().cpu().numpy()[0, :, :, :, :])
                 tar = y.detach().cpu().numpy()[0, 0, :, :, :]
                 eval_det.update(np.sum(jac_det <= 0) / np.prod(tar.shape), x.size(0))
-                eval_dsc.update(dsc.item(), x.size(0))
         best_dsc = max(eval_dsc.avg, best_dsc)
         log_csv(save_dir, epoch, eval_dsc.avg, eval_det.avg, loss_all.avg, current_lr)
         save_checkpoint({

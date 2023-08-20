@@ -165,25 +165,35 @@ def main():
             x_in = torch.cat((x,y), dim=1)
             output = model(x_in)
 
-            optron1 = Optron(output[1].clone().detach())
-            Optron_optimizer = optim.Adam(optron1.parameters(), lr=args.optron_lr, weight_decay=0, amsgrad=True)
-            adjust_learning_rate(Optron_optimizer, epoch, max_epoch, args.optron_lr)
-            for i in range(args.optron_epoch):
+            if optron_epoch:
+                optron1 = Optron(output[1].clone().detach())
+                Optron_optimizer = optim.Adam(optron1.parameters(), lr=args.optron_lr, weight_decay=0, amsgrad=True)
+                adjust_learning_rate(Optron_optimizer, epoch, max_epoch, args.optron_lr)
+
+                for i in range(args.optron_epoch):
+                    x_warped, optimized_flow = optron1(x)
+                    Optron_loss_ncc = criterions[0](x_warped, y) * weights_opt[0]
+                    Optron_loss_reg = criterions[1](optimized_flow, y) * weights_opt[1]
+                    Optron_loss = Optron_loss_ncc + Optron_loss_reg
+
+                    Optron_optimizer.zero_grad()
+                    Optron_loss.backward()
+                    Optron_optimizer.step()
+                
                 x_warped, optimized_flow = optron1(x)
-                Optron_loss_ncc = criterions[0](x_warped, y) * weights_opt[0]
-                Optron_loss_reg = criterions[1](optimized_flow, y) * weights_opt[1]
-                Optron_loss = Optron_loss_ncc + Optron_loss_reg
+            
+                loss_mse = criterions[2](output[1], optimized_flow) * weights_model[0]
+                loss_reg = criterions[1](output[1], y) * weights_model[1]
+                loss = loss_mse + loss_reg
+                loss_vals = [loss_mse, loss_reg]
+                loss_all.update(loss.item(), y.numel())
+            else:
+                loss_ncc = criterions[0](output[0], y)
+                loss_reg = criterions[1](output[1], y)
+                loss = loss_ncc + loss_reg
+                loss_vals = [loss_ncc, loss_reg]
+                loss_all.update(loss.item(), y.numel())
 
-                Optron_optimizer.zero_grad()
-                Optron_loss.backward()
-                Optron_optimizer.step()
-
-            x_warped, optimized_flow = optron1(x)
-            loss_mse = criterions[2](output[1], optimized_flow) * weights_model[0]
-            loss_reg = criterions[1](output[1], y) * weights_model[1]
-            loss = loss_mse + loss_reg
-            loss_vals = [loss_mse, loss_reg]
-            loss_all.update(loss.item(), y.numel())
             # compute gradient and do SGD step
             optimizer.zero_grad()
             loss.backward()
@@ -193,24 +203,30 @@ def main():
                 y_in = torch.cat((y, x), dim=1)
                 output = model(y_in)
 
-                optron2 = Optron(output[1].clone().detach())
-                Optron_optimizer = optim.Adam(optron2.parameters(), lr=args.optron_lr, weight_decay=0, amsgrad=True)
-                adjust_learning_rate(Optron_optimizer, epoch, max_epoch, args.optron_lr)
+                if optron_epoch:
+                    optron2 = Optron(output[1].clone().detach())
+                    Optron_optimizer = optim.Adam(optron2.parameters(), lr=args.optron_lr, weight_decay=0, amsgrad=True)
+                    adjust_learning_rate(Optron_optimizer, epoch, max_epoch, args.optron_lr)
 
-                for i in range(optron_epoch):
-                    y_warped, optimized_flow = optron2(y)
-                    Optron_loss_ncc = criterions[0](y_warped, x) * weights_opt[0]
-                    Optron_loss_reg = criterions[1](optimized_flow, x) * weights_opt[1]
-                    Optron_loss = Optron_loss_ncc + Optron_loss_reg
+                    for i in range(optron_epoch):
+                        y_warped, optimized_flow = optron2(y)
+                        Optron_loss_ncc = criterions[0](y_warped, x) * weights_opt[0]
+                        Optron_loss_reg = criterions[1](optimized_flow, x) * weights_opt[1]
+                        Optron_loss = Optron_loss_ncc + Optron_loss_reg
 
-                    Optron_optimizer.zero_grad()
-                    Optron_loss.backward()
-                    Optron_optimizer.step()
+                        Optron_optimizer.zero_grad()
+                        Optron_loss.backward()
+                        Optron_optimizer.step()
 
-                loss_mse = criterions[2](optimized_flow, output[1]) * weights_model[0]
-                loss_reg = criterions[1](output[1], x) * weights_model[1]
-                loss = loss_mse + loss_reg
-                loss_vals = [loss_mse, loss_reg]
+                    loss_mse = criterions[2](optimized_flow, output[1]) * weights_model[0]
+                    loss_reg = criterions[1](output[1], x) * weights_model[1]
+                    loss = loss_mse + loss_reg
+                    loss_vals = [loss_mse, loss_reg]
+                else:
+                    loss_ncc = criterions[0](output[0], y)
+                    loss_reg = criterions[1](output[1], y)
+                    loss = loss_ncc + loss_reg
+                    loss_vals = [loss_mse, loss_reg]
                 
                 loss_all.update(loss.item(), x.numel())
                 optimizer.zero_grad()

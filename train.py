@@ -1,4 +1,3 @@
-from torch.utils.tensorboard import SummaryWriter
 import os, utils, glob, losses
 import sys
 from torch.utils.data import DataLoader
@@ -8,7 +7,6 @@ import torch
 from torchvision import transforms
 from torch import optim
 import torch.nn as nn
-import matplotlib.pyplot as plt
 from natsort import natsorted
 from models.ViTVNet import CONFIGS as CONFIGS_ViT
 from models.ViTVNet import ViTVNet
@@ -17,7 +15,7 @@ import models.TransMorph as TransMorph
 from models.VoxelMorph import VxmDense_1
 
 from models.Optron import Optron
-from csv_logger import log_csv
+# from csv_logger import log_csv
 
 import argparse
 
@@ -33,7 +31,7 @@ parser.add_argument('--atlas_dir', type=str, default='../autodl-fs/IXI_data/atla
 parser.add_argument('--model', type=str, default='TransMorph')
 
 parser.add_argument('--training_lr', type=float, default=1e-4)
-parser.add_argument('--optron_lr', type=float, default=1e-2)
+parser.add_argument('--optron_lr', type=float, default=1e-1)
 parser.add_argument('--epoch_start', type=int, default=0)
 parser.add_argument('--max_epoch', type=int, default=500)
 
@@ -55,13 +53,22 @@ class Logger(object):
         pass
 
 
+def log_csv(save_dir, epoch, dsc, Jdet, loss, lr):
+    # check if directory exists
+    if not os.path.exists('logs/'+save_dir):
+        os.makedirs('logs/'+save_dir)
+    with open('logs/'+save_dir+'log.csv', 'a') as f:
+        f.write('{},{},{},{},{}\n'.format(epoch, dsc, Jdet, loss, lr))
+
+
 def main():
     batch_size = 1
     atlas_dir = args.atlas_dir
     train_dir = args.train_dir
     val_dir = args.val_dir
-    weights = [1, 1] # loss weights
-    save_dir = '{}_ncc_{}_diffusion_{}/'.format(args.model, weights[0], weights[1])
+    weights_model = [1, 0.02] # loss weights of optimizer
+    weights_opt = [1, 1] # loss weighs of model loss
+    save_dir = '{}_{}_opt/'.format(args.model, args.dataset)
     if not os.path.exists('experiments/'+save_dir):
         os.makedirs('experiments/'+save_dir)
     if not os.path.exists('logs/'+save_dir):
@@ -156,13 +163,14 @@ def main():
             x_in = torch.cat((x,y), dim=1)
             output = model(x_in)
 
+            #! directly optimize initial deformation field
             optron1 = Optron(output[1].clone().detach())
             Optron_optimizer = optim.Adam(optron1.parameters(), lr=args.optron_lr, weight_decay=0, amsgrad=True)
             adjust_learning_rate(Optron_optimizer, epoch, max_epoch, args.optron_lr)
             for i in range(args.optron_epoch):
                 x_warped, optimized_flow = optron1(x)
-                Optron_loss_ncc = criterions[0](x_warped, y) * weights[0]
-                Optron_loss_reg = criterions[1](optimized_flow, y) * weights[1]
+                Optron_loss_ncc = criterions[0](x_warped, y) * weights_opt[0]
+                Optron_loss_reg = criterions[1](optimized_flow, y) * weights_opt[1]
                 Optron_loss = Optron_loss_ncc + Optron_loss_reg
 
                 Optron_optimizer.zero_grad()
@@ -170,8 +178,8 @@ def main():
                 Optron_optimizer.step()
 
             x_warped, optimized_flow = optron1(x)
-            loss_mse = criterions[2](output[1], optimized_flow)
-            loss_reg = criterions[1](output[1], y) * 0.02
+            loss_mse = criterions[2](output[1], optimized_flow) * weights_model[0]
+            loss_reg = criterions[1](output[1], y) * weights_model[1]
             loss = loss_mse + loss_reg
             loss_vals = [loss_mse, loss_reg]
             loss_all.update(loss.item(), y.numel())
@@ -184,22 +192,23 @@ def main():
                 y_in = torch.cat((y, x), dim=1)
                 output = model(y_in)
 
+                #! directly optimize initial deformation field
                 optron2 = Optron(output[1].clone().detach())
                 Optron_optimizer = optim.Adam(optron2.parameters(), lr=args.optron_lr, weight_decay=0, amsgrad=True)
                 adjust_learning_rate(Optron_optimizer, epoch, max_epoch, args.optron_lr)
 
                 for i in range(args.optron_epoch):
                     y_warped, optimized_flow = optron2(y)
-                    Optron_loss_ncc = criterions[0](y_warped, x) * weights[0]
-                    Optron_loss_reg = criterions[1](optimized_flow, x) * weights[1]
+                    Optron_loss_ncc = criterions[0](y_warped, x) * weights_opt[0]
+                    Optron_loss_reg = criterions[1](optimized_flow, x) * weights_opt[1]
                     Optron_loss = Optron_loss_ncc + Optron_loss_reg
 
                     Optron_optimizer.zero_grad()
                     Optron_loss.backward()
                     Optron_optimizer.step()
 
-                loss_mse = criterions[2](optimized_flow, output[1])
-                loss_reg = criterions[1](output[1], x) * 0.02
+                loss_mse = criterions[2](optimized_flow, output[1]) * weights_model[0]
+                loss_reg = criterions[1](output[1], x) * weights_model[1]
                 loss = loss_mse + loss_reg
                 loss_vals = [loss_mse, loss_reg]
                 
@@ -208,13 +217,16 @@ def main():
                 loss.backward()
                 optimizer.step()
 
-            print('Iter {} of {} loss {:.4f}, Img Sim: {:.6f}, Reg: {:.6f}'.format(idx, len(train_loader), loss.item(), loss_vals[0].item(), loss_vals[1].item()))
+            current_lr = optimizer.state_dict()['param_groups'][0]['lr']
+            print('Epoch [{}/{}] Iter [{}/{}] - loss {:.4f}, Img Sim: {:.6f}, Reg: {:.6f}, lr: {:.6f}'.format(epoch, max_epoch, idx, len(train_loader), loss.item(), loss_vals[0].item(), loss_vals[1].item(), current_lr))
+            # print('Iter {} of {} loss {:.4f}, Img Sim: {:.6f}, Reg: {:.6f}'.format(idx, len(train_loader), loss.item(), loss_vals[0].item(), loss_vals[1].item()))
 
-        print('Epoch {} loss {:.4f}'.format(epoch, loss_all.avg))
+        # print('Epoch {} loss {:.4f}'.format(epoch, loss_all.avg))
         '''
         Validation
         '''
         eval_dsc = utils.AverageMeter()
+        eval_det = utils.AverageMeter()
         with torch.no_grad():
             for data in val_loader:
                 model.eval()
@@ -224,18 +236,23 @@ def main():
                 output = model(x_in)
                 def_out = reg_model([x_seg.cuda().float(), output[1].cuda()])
                 dsc = utils.dice_val_VOI(def_out.long(), y_seg.long())
+                jac_det = utils.jacobian_determinant_vxm(output[1].detach().cpu().numpy()[0, :, :, :, :])
+                tar = y.detach().cpu().numpy()[0, 0, :, :, :]
+                eval_det.update(np.sum(jac_det <= 0) / np.prod(tar.shape), x.size(0))
                 eval_dsc.update(dsc.item(), x.size(0))
-                print(eval_dsc.avg)
         best_dsc = max(eval_dsc.avg, best_dsc)
-        log_csv(epoch, eval_dsc.avg, loss_all.avg)
+        log_csv(save_dir, epoch, eval_dsc.avg, eval_det.avg, loss_all.avg, current_lr)
         save_checkpoint({
             'epoch': epoch + 1,
             'state_dict': model.state_dict(),
             'best_dsc': best_dsc,
             'optimizer': optimizer.state_dict(),
-        }, save_dir='experiments/'+save_dir, filename='dsc{:.3f}.pth.tar'.format(eval_dsc.avg))
+        }, save_dir='experiments/'+save_dir, filename='dsc{:.3f}_epoch{:d}.pth.tar'.format(eval_dsc.avg, epoch))
+        
+        print('\nEpoch [{}/{}] - DSC: {:.6f}, Jdet: {:.8f}, loss: {:.6f}, lr: {:.6f}\n'.format(epoch, max_epoch, eval_dsc.avg, loss_all.avg, current_lr))
+        
         loss_all.reset()
-
+        torch.cuda.empty_cache()
 
 def adjust_learning_rate(optimizer, epoch, MAX_EPOCHES, INIT_LR, power=0.9):
     for param_group in optimizer.param_groups:

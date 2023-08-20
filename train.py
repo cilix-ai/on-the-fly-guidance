@@ -223,8 +223,8 @@ def main():
                     loss = loss_mse + loss_reg
                     loss_vals = [loss_mse, loss_reg]
                 else:
-                    loss_ncc = criterions[0](output[0], y)
-                    loss_reg = criterions[1](output[1], y)
+                    loss_ncc = criterions[0](output[0], x)
+                    loss_reg = criterions[1](output[1], x)
                     loss = loss_ncc + loss_reg
                     loss_vals = [loss_ncc, loss_reg]
                 

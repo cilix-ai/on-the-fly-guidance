@@ -33,11 +33,11 @@ parser.add_argument('--atlas_dir', type=str, default='../autodl-fs/IXI_data/atla
 parser.add_argument('--model', type=str, default='TransMorph')
 
 parser.add_argument('--training_lr', type=float, default=1e-4)
-parser.add_argument('--optron_lr', type=float, default=1e-2)
+parser.add_argument('--optron_lr', type=float, default=1e-1)
 parser.add_argument('--epoch_start', type=int, default=0)
 parser.add_argument('--max_epoch', type=int, default=500)
 
-parser.add_argument('--optron_epoch', type=int, default=10)
+parser.add_argument('--optron_epoch', type=int, default=10, help='the number of iterations in optimization, 0 represents no optimization')
 
 args = parser.parse_args()
 
@@ -60,6 +60,8 @@ def main():
     atlas_dir = args.atlas_dir
     train_dir = args.train_dir
     val_dir = args.val_dir
+    optron_epoch = args.optron_epoch
+
     weights = [1, 1] # loss weights
     save_dir = '{}_ncc_{}_diffusion_{}/'.format(args.model, weights[0], weights[1])
     if not os.path.exists('experiments/'+save_dir):
@@ -156,10 +158,11 @@ def main():
             x_in = torch.cat((x,y), dim=1)
             output = model(x_in)
 
-            optron1 = Optron(output[1].clone().detach())
-            Optron_optimizer = optim.Adam(optron1.parameters(), lr=args.optron_lr, weight_decay=0, amsgrad=True)
-            adjust_learning_rate(Optron_optimizer, epoch, max_epoch, args.optron_lr)
-            for i in range(args.optron_epoch):
+            if optron_epoch:
+                optron1 = Optron(output[1].clone().detach())
+                Optron_optimizer = optim.Adam(optron1.parameters(), lr=args.optron_lr, weight_decay=0, amsgrad=True)
+                adjust_learning_rate(Optron_optimizer, epoch, max_epoch, args.optron_lr)
+            for i in range(optron_epoch):
                 x_warped, optimized_flow = optron1(x)
                 Optron_loss_ncc = criterions[0](x_warped, y) * weights[0]
                 Optron_loss_reg = criterions[1](optimized_flow, y) * weights[1]
@@ -184,11 +187,12 @@ def main():
                 y_in = torch.cat((y, x), dim=1)
                 output = model(y_in)
 
-                optron2 = Optron(output[1].clone().detach())
-                Optron_optimizer = optim.Adam(optron2.parameters(), lr=args.optron_lr, weight_decay=0, amsgrad=True)
-                adjust_learning_rate(Optron_optimizer, epoch, max_epoch, args.optron_lr)
+                if optron_epoch:
+                    optron2 = Optron(output[1].clone().detach())
+                    Optron_optimizer = optim.Adam(optron2.parameters(), lr=args.optron_lr, weight_decay=0, amsgrad=True)
+                    adjust_learning_rate(Optron_optimizer, epoch, max_epoch, args.optron_lr)
 
-                for i in range(args.optron_epoch):
+                for i in range(optron_epoch):
                     y_warped, optimized_flow = optron2(y)
                     Optron_loss_ncc = criterions[0](y_warped, x) * weights[0]
                     Optron_loss_reg = criterions[1](optimized_flow, x) * weights[1]
@@ -223,7 +227,10 @@ def main():
                 x_in = torch.cat((x, y), dim=1)
                 output = model(x_in)
                 def_out = reg_model([x_seg.cuda().float(), output[1].cuda()])
-                dsc = utils.dice_val_VOI(def_out.long(), y_seg.long())
+                if args.dataset == "OASIS":
+                    dsc = utils.dice_OASIS(def_out.long(), y_seg.long())
+                elif args.dataset == "IXI":
+                    dsc = utils.dice_IXI(def_out.long(), y_seg.long())
                 eval_dsc.update(dsc.item(), x.size(0))
                 print(eval_dsc.avg)
         best_dsc = max(eval_dsc.avg, best_dsc)

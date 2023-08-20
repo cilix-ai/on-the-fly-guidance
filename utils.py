@@ -102,8 +102,26 @@ def dice_val(y_pred, y_true, num_clus):
     dsc = (2.*intersection) / (union + 1e-5)
     return torch.mean(torch.mean(dsc, dim=1))
 
-def dice_val_VOI(y_pred, y_true):
+def dice_IXI(y_pred, y_true):
     VOI_lbls = [1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 20, 21, 22, 23, 25, 26, 27, 28, 29, 30, 31, 32, 34, 36]
+    pred = y_pred.detach().cpu().numpy()[0, 0, ...]
+    true = y_true.detach().cpu().numpy()[0, 0, ...]
+    DSCs = np.zeros((len(VOI_lbls), 1))
+    idx = 0
+    for i in VOI_lbls:
+        pred_i = pred == i
+        true_i = true == i
+        intersection = pred_i * true_i
+        intersection = np.sum(intersection)
+        union = np.sum(pred_i) + np.sum(true_i)
+        dsc = (2.*intersection) / (union + 1e-5)
+        DSCs[idx] =dsc
+        idx += 1
+    return np.mean(DSCs)
+
+def dice_OASIS(y_pred, y_true):
+    VOI_lbls = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28,
+                29, 30, 31, 32, 33, 34, 35]
     pred = y_pred.detach().cpu().numpy()[0, 0, ...]
     true = y_true.detach().cpu().numpy()[0, 0, ...]
     DSCs = np.zeros((len(VOI_lbls), 1))

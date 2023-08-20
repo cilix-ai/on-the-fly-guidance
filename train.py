@@ -226,7 +226,7 @@ def main():
                     loss_ncc = criterions[0](output[0], y)
                     loss_reg = criterions[1](output[1], y)
                     loss = loss_ncc + loss_reg
-                    loss_vals = [loss_mse, loss_reg]
+                    loss_vals = [loss_ncc, loss_reg]
                 
                 loss_all.update(loss.item(), x.numel())
                 optimizer.zero_grad()

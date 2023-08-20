@@ -66,6 +66,7 @@ class SpatialTransformer(nn.Module):
 
         return nnf.grid_sample(src, new_locs, align_corners=True, mode=self.mode)
 
+
 class ConvBlock(nn.Module):
     """
     Specific convolutional block followed by leakyrelu for unet.
@@ -82,6 +83,7 @@ class ConvBlock(nn.Module):
         out = self.main(x)
         out = self.activation(out)
         return out
+
 
 class Unet(nn.Module):
     """
@@ -168,6 +170,7 @@ class Unet(nn.Module):
 
         return x
 
+
 class VxmDense_1(nn.Module):
     """
     VoxelMorph network for (unsupervised) nonlinear registration between two images.
@@ -246,6 +249,7 @@ class VxmDense_1(nn.Module):
         y_source = self.transformer(source, pos_flow)
 
         return y_source, pos_flow
+
 
 class VxmDense_2(nn.Module):
     """
@@ -326,6 +330,7 @@ class VxmDense_2(nn.Module):
 
         return y_source, pos_flow
 
+
 class VxmDensex2(nn.Module):
     """
     VoxelMorph network for (unsupervised) nonlinear registration between two images.
@@ -404,6 +409,7 @@ class VxmDensex2(nn.Module):
         y_source = self.transformer(source, pos_flow)
 
         return y_source, pos_flow
+
 
 class VxmDense_huge(nn.Module):
     """

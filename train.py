@@ -268,7 +268,7 @@ def main():
             'optimizer': optimizer.state_dict(),
         }, save_dir='experiments/'+save_dir, filename='dsc{:.3f}_epoch{:d}.pth.tar'.format(eval_dsc.avg, epoch))
         
-        print('\nEpoch [{}/{}] - DSC: {:.6f}, Jdet: {:.8f}, loss: {:.6f}, lr: {:.6f}\n'.format(epoch, max_epoch, eval_dsc.avg, loss_all.avg, current_lr))
+        print('\nEpoch [{}/{}] - DSC: {:.6f}, Jdet: {:.8f}, loss: {:.6f}, lr: {:.6f}\n'.format(epoch, max_epoch, eval_dsc.avg, eval_det.avg, loss_all.avg, current_lr))
         
         loss_all.reset()
         torch.cuda.empty_cache()

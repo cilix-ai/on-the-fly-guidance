@@ -32,8 +32,8 @@ def main():
         csv_name = args.model + '_opt.csv'
     else:
         csv_name = args.model + '.csv'
-        
-    save_dir += args.dataset + '/' + args.model + '/'
+    
+    save_dir = args.save_dir + args.dataset + '/'
     # if not os.path.exists(save_dir + 'deformation_fields/'):
     #     os.makedirs(save_dir + 'deformation_fields/')
         
@@ -65,7 +65,7 @@ def main():
     """load test dataset"""
     test_dir = args.test_dir    
     if args.dataset == 'IXI':
-        atlas_dir = args.atlas
+        atlas_dir = args.atlas_dir
         test_composed = transforms.Compose([trans.Seg_norm(), trans.NumpyType((np.float32, np.int16)),])
         test_set = datasets.IXIBrainInferDataset(glob.glob(test_dir + '*.pkl'), atlas_dir, transforms=test_composed)
         test_loader = DataLoader(test_set, batch_size=1, shuffle=False, num_workers=1, pin_memory=True, drop_last=True)
@@ -141,7 +141,9 @@ def main():
 
 def write_csv(save_dir, idx, dsc, Jdet):
     # check if directory exists
-    with open(save_dir+'results.csv', 'a') as f:
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+    with open(save_dir, 'a') as f:
         f.write('{},{},{}\n'.format(idx, dsc, Jdet))
         
 

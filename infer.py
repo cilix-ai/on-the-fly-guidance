@@ -141,8 +141,8 @@ def main():
 
 def write_csv(save_dir, idx, dsc, Jdet):
     # check if directory exists
-    if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
+    # if not os.path.exists(save_dir):
+    #     os.makedirs(save_dir)
     with open(save_dir, 'a') as f:
         f.write('{},{},{}\n'.format(idx, dsc, Jdet))
         

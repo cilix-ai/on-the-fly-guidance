@@ -23,10 +23,11 @@ import argparse
 # parse the commandline
 parser = argparse.ArgumentParser()
 
-parser.add_argument('--train_dir', type=str, default='../autodl-fs/IXI_data/Train/')
-parser.add_argument('--val_dir', type=str, default='../autodl-fs/IXI_data/Val/')
+parser.add_argument('--train_dir', type=str, default='../LPBA40/train/')
+parser.add_argument('--val_dir', type=str, default='../LPBA40/test/')
+parser.add_argument('--label_dir', type=str, default='../LPBA40/label/')
 parser.add_argument('--dataset', type=str, default='IXI')
-parser.add_argument('--atlas_dir', type=str, default='../autodl-fs/IXI_data/atlas.pkl')
+parser.add_argument('--atlas_dir', type=str, default='../LPBA40/atlas.nii.gz')
 
 parser.add_argument('--model', type=str, default='TransMorph')
 
@@ -66,6 +67,7 @@ def main():
     atlas_dir = args.atlas_dir
     train_dir = args.train_dir
     val_dir = args.val_dir
+    label_dir = args.label_dir
     optron_epoch = args.optron_epoch
     
     weights_model = [1, 0.02] # loss weights of optimizer
@@ -83,9 +85,12 @@ def main():
     '''
     Initialize model
     '''
-    img_size = (160, 192, 224)
+    img_size = (160, 192, 160) if args.dataset == "LPBA" else (160, 192, 224)
     if args.model == "TransMorph":
         config = CONFIGS_TM['TransMorph']
+        if args.dataset == "LPBA":
+            config.img_size = img_size
+            config.window_size = (5, 6, 5, 5)
         model = TransMorph.TransMorph(config)
     elif args.model == "VoxelMorph":
         model = VxmDense_1(img_size)
@@ -137,6 +142,18 @@ def main():
         val_set = datasets.OASISBrainInferDataset(glob.glob(val_dir + '*.pkl'), transforms=val_composed)
         train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=0, pin_memory=True)
         val_loader = DataLoader(val_set, batch_size=1, shuffle=False, num_workers=0, pin_memory=True, drop_last=True)
+    elif args.dataset == "LPBA":
+        train_composed = transforms.Compose([trans.RandomFlip(0),
+                                            trans.NumpyType((np.float32, np.float32)),
+                                            ])
+
+        val_composed = transforms.Compose([trans.Seg_norm(), #rearrange segmentation label to 1 to 46
+                                        trans.NumpyType((np.float32, np.int16))])
+        
+        train_set = datasets.LPBADataset(glob.glob(train_dir + '*.nii.gz'), atlas_dir, transforms=train_composed)
+        val_set = datasets.LPBAInferDataset(glob.glob(val_dir + '*.nii.gz'), atlas_dir, label_dir, transforms=val_composed)
+        train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=0, pin_memory=False)
+        val_loader = DataLoader(val_set, batch_size=1, shuffle=False, num_workers=0, pin_memory=False, drop_last=True)
     
     optimizer = optim.Adam(model.parameters(), lr=updated_lr, weight_decay=0, amsgrad=True)
     criterion = losses.NCC_vxm()
@@ -166,7 +183,7 @@ def main():
             output = model(x_in)
 
             if optron_epoch:
-                optron1 = Optron(output[1].clone().detach())
+                optron1 = Optron(img_size, output[1].clone().detach())
                 Optron_optimizer = optim.Adam(optron1.parameters(), lr=args.optron_lr, weight_decay=0, amsgrad=True)
                 adjust_learning_rate(Optron_optimizer, epoch, max_epoch, args.optron_lr)
 
@@ -204,7 +221,7 @@ def main():
                 output = model(y_in)
 
                 if optron_epoch:
-                    optron2 = Optron(output[1].clone().detach())
+                    optron2 = Optron(img_size, output[1].clone().detach())
                     Optron_optimizer = optim.Adam(optron2.parameters(), lr=args.optron_lr, weight_decay=0, amsgrad=True)
                     adjust_learning_rate(Optron_optimizer, epoch, max_epoch, args.optron_lr)
 
@@ -255,6 +272,8 @@ def main():
                     dsc = utils.dice_OASIS(def_out.long(), y_seg.long())
                 elif args.dataset == "IXI":
                     dsc = utils.dice_IXI(def_out.long(), y_seg.long())
+                elif args.dataset == "LPBA":
+                    dsc = utils.dice_LPBA(y_seg.cpu().detach().numpy(), def_out[0, 0, ...].cpu().detach().numpy())
                 eval_dsc.update(dsc.item(), x.size(0))
                 jac_det = utils.jacobian_determinant_vxm(output[1].detach().cpu().numpy()[0, :, :, :, :])
                 tar = y.detach().cpu().numpy()[0, 0, :, :, :]

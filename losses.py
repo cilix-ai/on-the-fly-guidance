@@ -554,3 +554,11 @@ class localMutualInformation(torch.nn.Module):
 
     def forward(self, y_true, y_pred):
         return -self.local_mi(y_true, y_pred)
+
+
+def DSC(pred, target):
+    smooth = 1e-5
+    m1 = pred.flatten()
+    m2 = target.flatten()
+    intersection = (m1 * m2).sum()
+    return (2. * intersection + smooth) / (m1.sum() + m2.sum() + smooth)

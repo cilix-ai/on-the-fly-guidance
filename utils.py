@@ -1,4 +1,4 @@
-import math
+import losses
 import numpy as np
 import torch.nn.functional as F
 import torch, sys
@@ -136,6 +136,16 @@ def dice_OASIS(y_pred, y_true):
         DSCs[idx] =dsc
         idx += 1
     return np.mean(DSCs)
+
+def dice_LPBA(gt, pred):
+    cls_lst = [21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 61, 62,
+               63, 64, 65, 66, 67, 68, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 101, 102, 121, 122, 161, 162,
+               163, 164, 165, 166]
+    dice_lst = []
+    for cls in cls_lst:
+        dice = losses.DSC(gt == cls, pred == cls)
+        dice_lst.append(dice)
+    return np.mean(dice_lst)
 
 def jacobian_determinant_vxm(disp):
     """

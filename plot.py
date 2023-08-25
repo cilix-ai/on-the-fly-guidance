@@ -12,6 +12,7 @@ import models.TransMorph as TransMorph
 from models.VoxelMorph import VxmDense_1
 import argparse
 import matplotlib.pyplot as plt
+import nibabel as nib
 
 
 # parse the commandline
@@ -95,69 +96,90 @@ def main():
             # model
             x_def, flow = model(x_in)
             def_grid = reg_model_bilin([grid_img.float(), flow.cuda()])
+            def_seg = reg_model([x_seg.cuda().float(), flow.cuda()])
             flow = flow.cpu().detach().numpy()
             rgb = def2rgb(flow[0])
             
             # model_opt
             x_def_opt, flow_opt = model_opt(x_in)
             def_grid_opt = reg_model_bilin([grid_img.float(), flow_opt.cuda()])
+            def_seg_opt = reg_model([x_seg.cuda().float(), flow_opt.cuda()])
             flow_opt = flow_opt.cpu().detach().numpy()
             rgb_opt = def2rgb(flow_opt[0])
             
             break
-    x = x.cpu().detach().numpy()
-    y = y.cpu().detach().numpy()
-    x_def = x_def.cpu().detach().numpy()
-    x_def_opt = x_def_opt.cpu().detach().numpy()
-    def_grid = def_grid.cpu().detach().numpy()
-    def_grid_opt = def_grid_opt.cpu().detach().numpy()
+    
+    var = [x, y, x_seg, y_seg, x_def, x_def_opt, def_seg, def_seg_opt, def_grid, def_grid_opt]
+    for i, _ in enumerate(var):
+        var[i] = var[i].cpu().detach().numpy()
+    x, y, x_seg, y_seg, x_def, x_def_opt, def_seg, def_seg_opt, def_grid, def_grid_opt = var
+
+    affine = np.eye(4)
+    x_nib = nib.Nifti1Image(x.squeeze(0).squeeze(0), affine)
+    x_nib.header.get_xyzt_units()
+    x_nib.to_filename('./results/outputs/x.nii.gz')
+    y_nib = nib.Nifti1Image(y.squeeze(0).squeeze(0), affine)
+    y_nib.header.get_xyzt_units()
+    y_nib.to_filename('./results/outputs/y.nii.gz')
+    
+    x_seg_nib = nib.Nifti1Image(x_seg.squeeze(0).squeeze(0), affine)
+    x_seg_nib.header.get_xyzt_units()
+    x_seg_nib.to_filename('./results/outputs/x_seg.nii.gz')
+    y_seg_nib = nib.Nifti1Image(y_seg.squeeze(0).squeeze(0), affine)
+    y_seg_nib.header.get_xyzt_units()
+    y_seg_nib.to_filename('./results/outputs/y_seg.nii.gz')
+
+    def_seg_nib = nib.Nifti1Image(def_seg.squeeze(0).squeeze(0), affine)
+    def_seg_nib.header.get_xyzt_units()
+    def_seg_nib.to_filename('./results/outputs/def_seg.nii.gz')
+    def_seg_opt_nib = nib.Nifti1Image(def_seg_opt.squeeze(0).squeeze(0), affine)
+    def_seg_opt_nib.header.get_xyzt_units()
+    def_seg_opt_nib.to_filename('./results/outputs/def_seg_opt.nii.gz')
     
     num_row, num_col = 3, 4
     fig, axs = plt.subplots(num_row, num_col, figsize=(7, 5), squeeze=False, tight_layout={'pad': 0})
 
-    print(def_grid.shape)
-
     # fixed image
     for j in range(num_row):
-        axs[j, 0].imshow(y[0, 0, 80, ...], cmap='gray')
+        axs[j, 0].imshow(y[0, 0, :, 96, :], cmap='gray')
         axs[j, 0].axis('off')
-    
+        
     axs[0, 0].set_title('Fixed')
     axs[0, 1].set_title('Moving')
     # axs[1, 0].set_ylabel('TRM')
     # axs[2, 0].set_ylabel("TRM_Opt")
 
     # moving image
-    axs[0, 1].imshow(x[0, 0, 80, ...], cmap='gray')
+    axs[0, 1].imshow(x[0, 0, :, 96, :], cmap='gray')
     axs[0, 1].axis('off')
-
+    
     axs[0, 2].set_visible(False)
     axs[0, 3].set_visible(False)
     
     # warped moving image of model
-    axs[1, 1].imshow(x_def[0, 0, 80, ...], cmap='gray')
-    axs[1, 1].axis('off')    
+    axs[1, 1].imshow(x_def[0, 0, :, 96, :], cmap='gray')
+    axs[1, 1].axis('off')
     
     # warped moving image of model_opt
-    axs[2, 1].imshow(x_def_opt[0, 0, 80, ...], cmap='gray')
+    axs[2, 1].imshow(x_def_opt[0, 0, :, 96, :], cmap='gray')
     axs[2, 1].axis('off')
     
     # deformation field of model
-    axs[1, 2].imshow(rgb[80, ...].astype('uint8'))
+    axs[1, 2].imshow(rgb[:, 96, :].astype('uint8'))
     axs[1, 2].axis('off')    
     
     # deformation field of model_opt
-    axs[2, 2].imshow(rgb_opt[80, ...].astype('uint8'))
+    axs[2, 2].imshow(rgb_opt[:, 96, :].astype('uint8'))
     axs[2, 2].axis('off')  
     
     # grid image of model
     # axs[1, 3].set_visible(False)
-    axs[1, 3].imshow(def_grid[0, 0, 80, ...], cmap='gray')
+    axs[1, 3].imshow(def_grid[0, 0, :, 96, :], cmap='gray')
     axs[1, 3].axis('off')    
     
     # grid image of model_opt
     # axs[2, 3].set_visible(False)
-    axs[2, 3].imshow(def_grid_opt[0, 0, 80, ...], cmap='gray')
+    axs[2, 3].imshow(def_grid_opt[0, 0, :, 96, :], cmap='gray')
     axs[2, 3].axis('off')
     
     plt.tight_layout()
@@ -176,16 +198,26 @@ def def2rgb(disp):
     
     return np.transpose(disp, (1, 2, 3, 0))
 
+# def mk_grid_img(grid_step, line_thickness=1, grid_sz=(160, 192, 224)):
+#     grid_img = np.zeros(grid_sz)
+#     for j in range(0, grid_img.shape[1], grid_step):
+#         grid_img[:, j+line_thickness-1, :] = 1
+#     for i in range(0, grid_img.shape[2], grid_step):
+#         grid_img[:, :, i+line_thickness-1] = 1
+#     grid_img = grid_img[None, None, ...]
+#     grid_img = torch.from_numpy(grid_img).cuda()
+#     return grid_img
+
 def mk_grid_img(grid_step, line_thickness=1, grid_sz=(160, 192, 224)):
     grid_img = np.zeros(grid_sz)
-    for j in range(0, grid_img.shape[1], grid_step):
-        grid_img[:, j+line_thickness-1, :] = 1
+    for j in range(0, grid_img.shape[0], grid_step):
+        grid_img[j+line_thickness-1, :, :] = 1
     for i in range(0, grid_img.shape[2], grid_step):
         grid_img[:, :, i+line_thickness-1] = 1
     grid_img = grid_img[None, None, ...]
     grid_img = torch.from_numpy(grid_img).cuda()
     return grid_img
-
+        
 
 if __name__ == '__main__':
     main()

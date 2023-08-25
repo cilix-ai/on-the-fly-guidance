@@ -9,3 +9,4 @@ scikit-image
 pandas
 nibabel
 SimpleITK
+antspyx

@@ -23,7 +23,6 @@ parser.add_argument('--atlas_dir', type=str, default='../autodl-fs/IXI_data/atla
 parser.add_argument('--model', type=str, default='TransMorph')
 parser.add_argument('--model_dir', type=str, default=None)
 parser.add_argument('--opt', action='store_true', help="whether use optimizer during training")
-parser.add_argument('--debug', action='store_true', help="if true, only infer the first val pair and save the deformation field")
 
 args = parser.parse_args()
 
@@ -93,16 +92,7 @@ def main():
 
             x_in = torch.cat((x,y),dim=1)
             x_def, flow = model(x_in)
-            
-            if args.debug:
-                # save deformation field
-                def_field = flow.cpu().detach().numpy()
-                def_field = np.transpose(def_field, (2, 3, 4, 1, 0))
-                affine = np.eye(4)
-                nii = nib.Nifti1Image(def_field, affine)
-                nib.save(nii, save_dir + 'def_field.nii.gz')
-                sys.exit(0)
-                        
+                                    
             #! more accurate
             # x_seg_oh = nn.functional.one_hot(x_seg.long(), num_classes=46)
             # x_seg_oh = torch.squeeze(x_seg_oh, 1)
@@ -123,7 +113,7 @@ def main():
             eval_det.update(Jdet, x.size(0))
             print('det < 0: {}'.format(Jdet))
             dsc_trans = utils.dice_IXI(def_out.long(), y_seg.long()) if args.dataset == 'IXI' else utils.dice_OASIS(def_out.long(), y_seg.long())
-            dsc_raw = utils.dice_IXI(def_out.long(), y_seg.long()) if args.dataset == 'IXI' else utils.dice_OASIS(def_out.long(), y_seg.long())
+            dsc_raw = utils.dice_IXI(x_seg.long(), y_seg.long()) if args.dataset == 'IXI' else utils.dice_OASIS(x_seg.long(), y_seg.long())
             print('Trans dsc: {:.4f}, Raw dsc: {:.4f}\n'.format(dsc_trans.item(),dsc_raw.item()))
             
             eval_dsc_def.update(dsc_trans.item(), x.size(0))

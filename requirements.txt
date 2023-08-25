@@ -8,3 +8,4 @@ ml_collections
 scikit-image
 pandas
 nibabel
+SimpleITK

@@ -11,6 +11,7 @@ class Optron(nn.Module):
     def __init__(self, img_size, initial_flow):
         """
         Args:
+            img_size (tuple): shape of the input image
             initial_flow (torch.Tensor): initial flow field
         """
         super(Optron, self).__init__()

@@ -106,7 +106,7 @@ def main():
             x_def, flow = model(x_in)
             time_end = time.time()
             eval_time.update(time_end - time_start, x.size(0))
-            print("{:.1f}s".format(time_end - time_start))
+            print("{}s".format(time_end - time_start))
             
             #! more accurate
             # x_seg_oh = nn.functional.one_hot(x_seg.long(), num_classes=46)
@@ -141,7 +141,7 @@ def main():
                                                                                     eval_dsc_raw.avg,
                                                                                     eval_dsc_raw.std))
         print('deformed det: {}, std: {}'.format(eval_det.avg, eval_det.std))
-        print('time: {:.1f}s'.format(eval_time.avg))
+        print('time: {}s'.format(eval_time.avg))
 
 
 def write_csv(save_dir, idx, dsc_raw, dsc_trans, Jdet, time):

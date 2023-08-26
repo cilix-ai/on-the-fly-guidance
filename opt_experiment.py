@@ -15,7 +15,8 @@ import nibabel as nib
 from torch import optim
 import losses
 
-from .models.CNNOpt import CNNOpt
+from models.CNNOpt import CNNOpt
+from models.CascadeOpt import CascadeOpt_Vxm
 
 # parse the commandline
 parser = argparse.ArgumentParser()
@@ -25,19 +26,17 @@ parser.add_argument('--save_dir', type=str, default='./results/')
 parser.add_argument('--dataset', type=str, default='IXI')
 parser.add_argument('--atlas_dir', type=str, default='../autodl-fs/IXI_data/atlas.pkl')
 parser.add_argument('--model', type=str, default='TransMorph')
-parser.add_argument('--model_dir', type=str, default=None)
+parser.add_argument('--model_dir', type=str, default='../VoxelMorph-IXI/optron/experiments/VoxelMorph_IXI_opt/')
 parser.add_argument('--opt', action='store_true', help="whether use optimizer during training")
 parser.add_argument('--debug', action='store_true', help="if true, only infer the first val pair and save the deformation field")
-parser.add_argument('--optron_epoch', type=int, default=0)
-parser.add_argument('--optron_model', type=int, default=0)
+parser.add_argument('--optron_epoch', type=int, default=10)
+parser.add_argument('--optron_model', type=str, default="CNNOpt")
+parser.add_argument('--optron_lr', type=float, default=1e-1)
 
 args = parser.parse_args()
 
 def main():
-    if args.opt:
-        csv_name = args.model + '_opt.csv'
-    else:
-        csv_name = args.model + '.csv'
+    csv_name = args.model + args.optron_model + '.csv'
     
     save_dir = args.save_dir + args.dataset + '/'
     # if not os.path.exists(save_dir + 'deformation_fields/'):
@@ -59,13 +58,12 @@ def main():
         raise ValueError("model_dir is None")
     else:
         model_dir = args.model_dir
-    model_idx = -1
-    best_model = torch.load(model_dir + natsorted(os.listdir(model_dir))[model_idx])['state_dict']
-    print('Best model: {}'.format(natsorted(os.listdir(model_dir))[model_idx]))
+    best_model = torch.load(model_dir + natsorted(os.listdir(model_dir))[-1])['state_dict']
+    print('Best model: {}'.format(natsorted(os.listdir(model_dir))[-1]))
     model.load_state_dict(best_model)
     model.cuda()
     
-    reg_model = utils.register_model(config.img_size, 'nearest')
+    reg_model = utils.register_model(img_size, 'nearest')
     reg_model.cuda()
     
     """load test dataset"""
@@ -92,17 +90,24 @@ def main():
 
     print("Start Inferring\n")
     if args.optron_model == "CNNOpt":
-        optron = CNNOpt(in_channels=5, out_channels=3, start_channels=7)
+        optron = CNNOpt(img_size, in_channels=5, out_channels=3, start_channels=7).cuda()
+    elif args.optron_model == "CascadeOpt":
+        optron = CascadeOpt_Vxm(img_size).cuda()
+        for i in range(2):
+            optron.blocks[i].load_state_dict(best_model)
+            print("load one block")
 
-    optron_optimizer = optim.ADam(optron.parameters(), lr=args.optron_lr, weight_decay=0, amsgrad=True)
+    optron_optimizer = optim.Adam(optron.parameters(), lr=args.optron_lr, weight_decay=0, amsgrad=True)
 
     criterion_ncc = losses.NCC_vxm()
     criterion_reg = losses.Grad3d(penalty='l2')
 
-    with torch.no_grad():
+    # with torch.no_grad():
+    for iter in range(100):
         idx = 0
         for data in test_loader:
             model.eval()
+            optron.train()
             data = [t.cuda() for t in data]
             x = data[0]
             y = data[1]
@@ -115,7 +120,7 @@ def main():
             """Optimizer"""
             
             for i in range(args.optron_epoch):
-                x_warped, optimized_flow = optron(x_in)
+                x_warped, optimized_flow = optron(torch.cat([x_in.clone().detach()], dim=1))
                 loss_ncc = criterion_ncc(x_warped, y)
                 loss_reg = criterion_reg(optimized_flow, y)
                 loss = loss_ncc + loss_reg
@@ -160,7 +165,7 @@ def main():
             print('opt det < 0: {}'.format(Jdet_opt))
 
             dsc_trans = utils.dice_IXI(def_out.long(), y_seg.long()) if args.dataset == 'IXI' else utils.dice_OASIS(def_out.long(), y_seg.long())
-            dsc_raw = utils.dice_IXI(def_out.long(), y_seg.long()) if args.dataset == 'IXI' else utils.dice_OASIS(def_out.long(), y_seg.long())
+            dsc_raw = utils.dice_IXI(x_def.long(), y_seg.long()) if args.dataset == 'IXI' else utils.dice_OASIS(def_out.long(), y_seg.long())
             dsc_opt = utils.dice_IXI(def_out_opt.long(), y_seg.long())
 
             print('Opt dsc: {:.4f}, Trans dsc: {:.4f}, Raw dsc: {:.4f}\n'.format(dsc_opt.item(), dsc_trans.item(), dsc_raw.item()))
@@ -176,12 +181,12 @@ def main():
             idx += 1
 
         print('Opt DSC: {:.3f} +- {:.3f}, Deformed DSC: {:.3f} +- {:.3f}, Affine DSC: {:.3f} +- {:.3f}'.format(eval_dsc_opt.avg,
-                                                                                                               eval_dsc_opt.std,
-                                                                                                               eval_dsc_def.avg,
-                                                                                                               eval_dsc_def.std,
-                                                                                                               eval_dsc_raw.avg,
-                                                                                                               eval_dsc_raw.std))
-        print('opt det: {}, std: {}, deformed det: {}, std: {}'.format(eval_det_opt.avg(), eval_det_opt.std(), eval_det.avg, eval_det.std))
+                                                                                                            eval_dsc_opt.std,
+                                                                                                            eval_dsc_def.avg,
+                                                                                                            eval_dsc_def.std,
+                                                                                                            eval_dsc_raw.avg,
+                                                                                                            eval_dsc_raw.std))
+        print('opt det: {}, std: {}, deformed det: {}, std: {}'.format(eval_det_opt.avg, eval_det_opt.std, eval_det.avg, eval_det.std))
 
 
 def write_csv(save_dir, idx, opt_dsc, opt_Jdet, dsc, Jdet):

@@ -11,7 +11,7 @@ class ResBlock(nn.Module):
         self.expansion = 1
 
         self.conv1 = nn.Conv3d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=bias)
-        self.conv2 = nn.Conv3d(out_channels, out_channels, kernel_size=3, srtide=1, padding=1, bias=bias)
+        self.conv2 = nn.Conv3d(out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=bias)
 
         if stride != 1 or in_channels != self.expansion * out_channels:
             self.shortcut = nn.Sequential(
@@ -95,7 +95,7 @@ class CNNOpt(nn.Module):
         return layers
 
     def forward(self, x):
-        source = x[, 0:1, ...]
+        source = x[:, 0:1, ...]
         fea = self.input_encoder(x)
 
         e = self.down_conv(fea)

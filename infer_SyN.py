@@ -9,37 +9,45 @@ import nibabel as nib
 import argparse
 import time
 
-
 # parse the commandline
 parser = argparse.ArgumentParser()
 
-parser.add_argument('--val_dir', type=str, default='../IXI_data/Val/')
-parser.add_argument('--label_dir', type=str, default='../LPBA40/label/')
+parser.add_argument('--val_dir', type=str, default='./IXI_data/Val/')
+parser.add_argument('--label_dir', type=str, default='./LPBA40/label/')
 parser.add_argument('--dataset', type=str, default='IXI')
-parser.add_argument('--atlas_dir', type=str, default='../IXI_data/atlas.pkl')
+parser.add_argument('--atlas_dir', type=str, default='./IXI_data/atlas.pkl')
 args = parser.parse_args()
 
+
 def main():
+    save_dir = 'SyN_' + args.dataset + '/'
+    if not os.path.exists('experiments/'+save_dir):
+        os.makedirs('experiments/'+save_dir)
+    if not os.path.exists('logs/'+save_dir):
+        os.makedirs('logs/'+save_dir)
+
     '''
     Initialize training
     '''
     if args.dataset == "IXI":
-        val_composed = transforms.Compose([trans.Seg_norm(), #rearrange segmentation label to 1 to 46
-                                        trans.NumpyType((np.float32, np.int16))])
-        
-        val_set = datasets.IXIBrainInferDataset(glob.glob(args.val_dir + '*.pkl'), args.atlas_dir, transforms=val_composed)
+        val_composed = transforms.Compose([trans.Seg_norm(),  # rearrange segmentation label to 1 to 46
+                                           trans.NumpyType((np.float32, np.int16))])
+
+        val_set = datasets.IXIBrainInferDataset(glob.glob(args.val_dir + '*.pkl'), args.atlas_dir,
+                                                transforms=val_composed)
         val_loader = DataLoader(val_set, batch_size=1, shuffle=False, num_workers=0, pin_memory=True, drop_last=True)
     elif args.dataset == "OASIS":
         val_composed = transforms.Compose([trans.NumpyType((np.float32, np.int16))])
         val_set = datasets.OASISBrainInferDataset(glob.glob(args.val_dir + '*.pkl'), transforms=val_composed)
         val_loader = DataLoader(val_set, batch_size=1, shuffle=False, num_workers=0, pin_memory=True, drop_last=True)
     elif args.dataset == "LPBA":
-        val_composed = transforms.Compose([trans.Seg_norm(), #rearrange segmentation label to 1 to 46
-                                        trans.NumpyType((np.float32, np.int16))])
-        
-        val_set = datasets.LPBAInferDataset(glob.glob(args.val_dir + '*.nii.gz'), args.atlas_dir, args.label_dir, transforms=val_composed)
+        val_composed = transforms.Compose([trans.Seg_norm(),  # rearrange segmentation label to 1 to 46
+                                           trans.NumpyType((np.float32, np.int16))])
+
+        val_set = datasets.LPBAInferDataset(glob.glob(args.val_dir + '*.nii.gz'), args.atlas_dir, args.label_dir,
+                                            transforms=val_composed)
         val_loader = DataLoader(val_set, batch_size=1, shuffle=False, num_workers=0, pin_memory=False, drop_last=True)
-    
+
     eval_dsc = utils.AverageMeter()
     eval_Jdet = utils.AverageMeter()
     eval_time = utils.AverageMeter()
@@ -47,6 +55,7 @@ def main():
         i = 0
         for data in val_loader:
             i += 1
+            print(i)
             x = data[0].squeeze(0).squeeze(0).detach().cpu().numpy()
             y = data[1].squeeze(0).squeeze(0).detach().cpu().numpy()
             x_seg = data[2].squeeze(0).squeeze(0).detach().cpu().numpy()
@@ -61,15 +70,15 @@ def main():
             reg12 = ants.registration(y, x, 'SyNOnly', reg_iterations=(160, 80, 40), syn_metric='meansquares')
             time_end = time.time()
             eval_time.update(time_end - time_start, 1)
-            
+
             def_seg = ants.apply_transforms(fixed=y_ants,
                                             moving=x_ants,
                                             transformlist=reg12['fwdtransforms'],
-                                            interpolator='nearestNeighbor',)
-                                            #whichtoinvert=[True, False, True, False]
+                                            interpolator='nearestNeighbor', )
+            # whichtoinvert=[True, False, True, False]
 
             flow = np.array(nib_load(reg12['fwdtransforms'][0]), dtype='float32', order='C')
-            flow = flow[:,:,:,0,:].transpose(3, 0, 1, 2)
+            flow = flow[:, :, :, 0, :].transpose(3, 0, 1, 2)
             def_seg = def_seg.numpy()
             def_seg = torch.from_numpy(def_seg[None, None, ...])
             y_seg = torch.from_numpy(y_seg[None, None, ...])
@@ -78,19 +87,20 @@ def main():
             jac_det = utils.jacobian_determinant_vxm(flow)
             Jdet = np.sum(jac_det <= 0) / np.prod(y_seg.shape)
             eval_Jdet.update(Jdet, 1)
-            
-            print(i)
+
             print('Jdet < 0: {}'.format(Jdet))
             print('DSC: {:.4f}'.format(dsc_trans.item()))
-            print("{:d}s".format(time_end-time_start))
+            print("{:.1f}s".format(time_end - time_start))
             print()
 
-        print("Average:")
-        print('Jdet < 0: {} +- {}'/format(eval_Jdet.avg, eval_Jdet.std))
-        print('DSC: {:.5f} +- {:.5f}'.format(eval_dsc.avg, eval_dsc.std))
-        print('time: {:d}s'.format(eval_time.avg))
+            log_csv(save_dir, i, dsc_trans.item(), Jdet, time_end - time_start)
 
-        
+        print("Average:")
+        print('Jdet < 0: {} +- {}' / format(eval_Jdet.avg, eval_Jdet.std))
+        print('DSC: {:.5f} +- {:.5f}'.format(eval_dsc.avg, eval_dsc.std))
+        print('time: {:.1f}s'.format(eval_time.avg))
+
+
 def nib_load(file_name):
     if not os.path.exists(file_name):
         return np.array([1])
@@ -99,6 +109,14 @@ def nib_load(file_name):
     data = proxy.get_fdata()
     proxy.uncache()
     return data
+
+def log_csv(save_dir, num, dsc, Jdet, time):
+    # check if directory exists
+    if not os.path.exists('logs/'+save_dir):
+        os.makedirs('logs/'+save_dir)
+    with open('logs/'+save_dir+'log.csv', 'a') as f:
+        f.write('{},{},{},{}\n'.format(num, dsc, Jdet, time))
+
 
 
 if __name__ == '__main__':

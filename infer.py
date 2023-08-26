@@ -12,17 +12,20 @@ import models.TransMorph as TransMorph
 from models.VoxelMorph import VxmDense_1
 import argparse
 import nibabel as nib
+import time
 
 # parse the commandline
 parser = argparse.ArgumentParser()
 
-parser.add_argument('--test_dir', type=str, default='../autodl-fs/IXI_data/Test/')
-parser.add_argument('--save_dir', type=str, default='./results/')
 parser.add_argument('--dataset', type=str, default='IXI')
+parser.add_argument('--test_dir', type=str, default='../autodl-fs/IXI_data/Test/')
+parser.add_argument('--label_dir', type=str, default='../LPBA40/label/')
 parser.add_argument('--atlas_dir', type=str, default='../autodl-fs/IXI_data/atlas.pkl')
+
+parser.add_argument('--save_dir', type=str, default='./results/')
 parser.add_argument('--model', type=str, default='TransMorph')
 parser.add_argument('--model_dir', type=str, default=None)
-parser.add_argument('--opt', action='store_true', help="whether use optimizer during training")
+parser.add_argument('--opt', action='store_true', help="optron or not")
 
 args = parser.parse_args()
 
@@ -33,8 +36,8 @@ def main():
         csv_name = args.model + '.csv'
     
     save_dir = args.save_dir + args.dataset + '/'
-    # if not os.path.exists(save_dir + 'deformation_fields/'):
-    #     os.makedirs(save_dir + 'deformation_fields/')
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
         
     """Initialize model"""
     img_size = (160, 192, 224)
@@ -62,7 +65,7 @@ def main():
     reg_model.cuda()
     
     """load test dataset"""
-    test_dir = args.test_dir    
+    test_dir = args.test_dir 
     if args.dataset == 'IXI':
         atlas_dir = args.atlas_dir
         test_composed = transforms.Compose([trans.Seg_norm(), trans.NumpyType((np.float32, np.int16)),])
@@ -72,6 +75,10 @@ def main():
         test_composed = transforms.Compose([trans.NumpyType((np.float32, np.int16)),])
         test_set = datasets.OASISBrainInferDataset(glob.glob(test_dir + '*.pkl'), transforms=test_composed)
         test_loader = DataLoader(test_set, batch_size=1, shuffle=False, num_workers=1, pin_memory=True, drop_last=True)
+    elif args.dataset == "LPBA":
+        test_composed = transforms.Compose([trans.Seg_norm(), trans.NumpyType((np.float32, np.int16))])
+        test_set = datasets.LPBAInferDataset(glob.glob(test_dir + '*.nii.gz'), atlas_dir, args.label_dir, transforms=test_composed)
+        test_loader = DataLoader(test_set, batch_size=1, shuffle=False, num_workers=0, pin_memory=False, drop_last=True)
     else:
         raise ValueError("Dataset name is wrong!")
     
@@ -79,10 +86,13 @@ def main():
     eval_dsc_def = utils.AverageMeter()
     eval_dsc_raw = utils.AverageMeter()
     eval_det = utils.AverageMeter()
+    eval_time = utils.AverageMeter()
     print("Start Inferring\n")
     with torch.no_grad():
         idx = 0
         for data in test_loader:
+            idx += 1
+            print(idx)
             model.eval()
             data = [t.cuda() for t in data]
             x = data[0]
@@ -91,8 +101,13 @@ def main():
             y_seg = data[3]
 
             x_in = torch.cat((x,y),dim=1)
+            
+            time_start = time.time()
             x_def, flow = model(x_in)
-                                    
+            time_end = time.time()
+            eval_time.update(time_end - time_start, x.size(0))
+            print("{:.1f}s".format(time_end - time_start))
+            
             #! more accurate
             # x_seg_oh = nn.functional.one_hot(x_seg.long(), num_classes=46)
             # x_seg_oh = torch.squeeze(x_seg_oh, 1)
@@ -115,26 +130,23 @@ def main():
             dsc_trans = utils.dice_IXI(def_out.long(), y_seg.long()) if args.dataset == 'IXI' else utils.dice_OASIS(def_out.long(), y_seg.long())
             dsc_raw = utils.dice_IXI(x_seg.long(), y_seg.long()) if args.dataset == 'IXI' else utils.dice_OASIS(x_seg.long(), y_seg.long())
             print('Trans dsc: {:.4f}, Raw dsc: {:.4f}\n'.format(dsc_trans.item(),dsc_raw.item()))
-            
             eval_dsc_def.update(dsc_trans.item(), x.size(0))
             eval_dsc_raw.update(dsc_raw.item(), x.size(0))
-            
-            write_csv(save_dir + csv_name, idx, dsc_trans.item(), Jdet)
-            idx += 1
-
+            write_csv(save_dir + csv_name, idx, dsc_raw.item(), dsc_trans.item(), Jdet, time_end - time_start)
+            print()
+        
+        print('Average:')
         print('Deformed DSC: {:.3f} +- {:.3f}, Affine DSC: {:.3f} +- {:.3f}'.format(eval_dsc_def.avg,
                                                                                     eval_dsc_def.std,
                                                                                     eval_dsc_raw.avg,
                                                                                     eval_dsc_raw.std))
         print('deformed det: {}, std: {}'.format(eval_det.avg, eval_det.std))
+        print('time: {:.1f}s', eval_time.avg)
 
 
-def write_csv(save_dir, idx, dsc, Jdet):
-    # check if directory exists
-    # if not os.path.exists(save_dir):
-    #     os.makedirs(save_dir)
+def write_csv(save_dir, idx, dsc_raw, dsc_trans, Jdet, time):
     with open(save_dir, 'a') as f:
-        f.write('{},{},{}\n'.format(idx, dsc, Jdet))
+        f.write('{},{},{},{},{}\n'.format(idx, dsc_raw, dsc_trans, Jdet, time))
         
 
 if __name__ == '__main__':

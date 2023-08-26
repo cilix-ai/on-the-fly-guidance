@@ -129,7 +129,7 @@ def main():
             print('det < 0: {}'.format(Jdet))
             dsc_trans = utils.dice_IXI(def_out.long(), y_seg.long()) if args.dataset == 'IXI' else utils.dice_OASIS(def_out.long(), y_seg.long())
             dsc_raw = utils.dice_IXI(x_seg.long(), y_seg.long()) if args.dataset == 'IXI' else utils.dice_OASIS(x_seg.long(), y_seg.long())
-            print('Trans dsc: {:.4f}, Raw dsc: {:.4f}\n'.format(dsc_trans.item(),dsc_raw.item()))
+            print('Trans dsc: {:.4f}, Raw dsc: {:.4f}'.format(dsc_trans.item(),dsc_raw.item()))
             eval_dsc_def.update(dsc_trans.item(), x.size(0))
             eval_dsc_raw.update(dsc_raw.item(), x.size(0))
             write_csv(save_dir + csv_name, idx, dsc_raw.item(), dsc_trans.item(), Jdet, time_end - time_start)
@@ -141,7 +141,7 @@ def main():
                                                                                     eval_dsc_raw.avg,
                                                                                     eval_dsc_raw.std))
         print('deformed det: {}, std: {}'.format(eval_det.avg, eval_det.std))
-        print('time: {:.1f}s', eval_time.avg)
+        print('time: {:.1f}s'.format(eval_time.avg))
 
 
 def write_csv(save_dir, idx, dsc_raw, dsc_trans, Jdet, time):

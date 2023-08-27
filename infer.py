@@ -40,7 +40,7 @@ def main():
         os.makedirs(save_dir)
         
     """Initialize model"""
-    img_size = (160, 192, 224)
+    img_size = (160, 192, 160) if args.dataset == "LPBA" else (160, 192, 224)
     if args.model == "TransMorph":
         config = CONFIGS_TM['TransMorph']
         model = TransMorph.TransMorph(config)
@@ -61,13 +61,13 @@ def main():
     model.load_state_dict(best_model)
     model.cuda()
     
-    reg_model = utils.register_model(config.img_size, 'nearest')
+    reg_model = utils.register_model(img_size, 'nearest')
     reg_model.cuda()
     
     """load test dataset"""
     test_dir = args.test_dir 
+    atlas_dir = args.atlas_dir
     if args.dataset == 'IXI':
-        atlas_dir = args.atlas_dir
         test_composed = transforms.Compose([trans.Seg_norm(), trans.NumpyType((np.float32, np.int16)),])
         test_set = datasets.IXIBrainInferDataset(glob.glob(test_dir + '*.pkl'), atlas_dir, transforms=test_composed)
         test_loader = DataLoader(test_set, batch_size=1, shuffle=False, num_workers=1, pin_memory=True, drop_last=True)

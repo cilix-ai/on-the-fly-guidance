@@ -127,8 +127,15 @@ def main():
             Jdet = np.sum(jac_det <= 0) / np.prod(tar.shape)
             eval_det.update(Jdet, x.size(0))
             print('det < 0: {}'.format(Jdet))
-            dsc_trans = utils.dice_IXI(def_out.long(), y_seg.long()) if args.dataset == 'IXI' else utils.dice_OASIS(def_out.long(), y_seg.long())
-            dsc_raw = utils.dice_IXI(x_seg.long(), y_seg.long()) if args.dataset == 'IXI' else utils.dice_OASIS(x_seg.long(), y_seg.long())
+            if args.dataset == "OASIS":
+                dsc_trans = utils.dice_OASIS(def_out.long(), y_seg.long())
+                dsc_raw = utils.dice_OASIS(x_seg.long(), y_seg.long())
+            elif args.dataset == "IXI":
+                dsc_trans = utils.dice_IXI(def_out.long(), y_seg.long())
+                dsc_raw = utils.dice_IXI(x_seg.long(), y_seg.long())
+            elif args.dataset == "LPBA":
+                dsc_trans = utils.dice_LPBA(y_seg.cpu().detach().numpy(), def_out[0, 0, ...].cpu().detach().numpy())
+                dsc_raw = utils.dice_LPBA(y_seg.cpu().detach().numpy(), x_seg.cpu().detach().numpy())
             print('Trans dsc: {:.4f}, Raw dsc: {:.4f}'.format(dsc_trans.item(),dsc_raw.item()))
             eval_dsc_def.update(dsc_trans.item(), x.size(0))
             eval_dsc_raw.update(dsc_raw.item(), x.size(0))

@@ -149,6 +149,7 @@ def main():
                                                                                     eval_dsc_raw.std))
         print('deformed det: {}, std: {}'.format(eval_det.avg, eval_det.std))
         print('time: {}s'.format(eval_time.avg))
+        write_csv(save_dir + csv_name, 'avg', eval_dsc_raw.avg, eval_dsc_def.avg, eval_det.avg, eval_time.avg)
 
 
 def write_csv(save_dir, idx, dsc_raw, dsc_trans, Jdet, time):

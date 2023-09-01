@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from models.VoxelMorph import VxmDense_1
+from models.VoxelMorph import VoxelMorph
 from models.TransMorph import CONFIGS as CONFIGS_TM
 import models.TransMorph as TransMorph
 
@@ -15,7 +15,7 @@ class CascadeOpt_Vxm(nn.Module):
 
         self.blocks = nn.ModuleList()
         for i in range(self.blk_num):
-            self.blocks.append(VxmDense_1(img_size))
+            self.blocks.append(VoxelMorph(img_size))
         
     def forward(self, x):
         y = x[:, 1:2, :, :]

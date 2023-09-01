@@ -1,10 +1,6 @@
 '''
 ViT-V-Net
 
-Paper:
-Chen, J., Du, Y., He, Y., Segars, P. W., Li, Y., & Frey, E. C. (2021).
-TransMorph: Transformer for Unsupervised Medical Image Registration. arXiv preprint arXiv:2111.10480.
-
 Original ViT-V-Net code was retrieved from:
 https://github.com/junyuchen245/ViT-V-Net_for_3D_Image_Registration_Pytorch
 
@@ -13,46 +9,20 @@ Chen, J., He, Y., Frey, E. C., Li, Y., & Du, Y. (2021).
 ViT-V-Net: Vision Transformer for Unsupervised Volumetric Medical Image Registration.
 arXiv preprint arXiv:2104.06468.
 
-Junyu Chen
-jchen245@jhmi.edu
-Johns Hopkins University
+Modified and tested by:
+Yicheng Chen, Shengxiang Ji, Yuelin Xin
 '''
 
-
-# coding=utf-8
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import copy
-import logging
 import math
 import torch
 import torch.nn as nn
-import torch.nn.functional as nnf
 from torch.nn import Dropout, Softmax, Linear, Conv3d, LayerNorm
-from torch.nn.modules.utils import _pair, _triple
-import models.config_ViTVNet as configs
+from torch.nn.modules.utils import _triple
+import configs.config_ViTVNet as configs
 from torch.distributions.normal import Normal
 
-logger = logging.getLogger(__name__)
-
-
-ATTENTION_Q = "MultiHeadDotProductAttention_1/query"
-ATTENTION_K = "MultiHeadDotProductAttention_1/key"
-ATTENTION_V = "MultiHeadDotProductAttention_1/value"
-ATTENTION_OUT = "MultiHeadDotProductAttention_1/out"
-FC_0 = "MlpBlock_3/Dense_0"
-FC_1 = "MlpBlock_3/Dense_1"
-ATTENTION_NORM = "LayerNorm_0"
-MLP_NORM = "LayerNorm_2"
-
-
-def np2th(weights, conv=False):
-    """Possibly convert HWIO to OIHW."""
-    if conv:
-        weights = weights.transpose([3, 2, 0, 1])
-    return torch.from_numpy(weights)
+from utils.utils import SpatialTransformer
 
 
 def swish(x):
@@ -185,6 +155,7 @@ class Block(nn.Module):
         x = x + h
         return x, weights
 
+
 class Encoder(nn.Module):
     def __init__(self, config, vis):
         super(Encoder, self).__init__()
@@ -275,6 +246,7 @@ class DecoderBlock(nn.Module):
         x = self.conv2(x)
         return x
 
+
 class DecoderCup(nn.Module):
     def __init__(self, config, img_size):
         super().__init__()
@@ -314,50 +286,6 @@ class DecoderCup(nn.Module):
             x = decoder_block(x, skip=skip)
         return x
 
-class SpatialTransformer(nn.Module):
-    """
-    N-D Spatial Transformer
-    Obtained from https://github.com/voxelmorph/voxelmorph
-    """
-
-    def __init__(self, size, mode='bilinear'):
-        super().__init__()
-
-        self.mode = mode
-
-        # create sampling grid
-        vectors = [torch.arange(0, s) for s in size]
-        grids = torch.meshgrid(vectors)
-        grid = torch.stack(grids)
-        grid = torch.unsqueeze(grid, 0)
-        grid = grid.type(torch.FloatTensor)
-
-        # registering the grid as a buffer cleanly moves it to the GPU, but it also
-        # adds it to the state dict. this is annoying since everything in the state dict
-        # is included when saving weights to disk, so the model files are way bigger
-        # than they need to be. so far, there does not appear to be an elegant solution.
-        # see: https://discuss.pytorch.org/t/how-to-register-buffer-without-polluting-state-dict
-        self.register_buffer('grid', grid)
-
-    def forward(self, src, flow):
-        # new locations
-        new_locs = self.grid + flow
-        shape = flow.shape[2:]
-
-        # need to normalize grid values to [-1, 1] for resampler
-        for i in range(len(shape)):
-            new_locs[:, i, ...] = 2 * (new_locs[:, i, ...] / (shape[i] - 1) - 0.5)
-
-        # move channels dim to last position
-        # also not sure why, but the channels need to be reversed
-        if len(shape) == 2:
-            new_locs = new_locs.permute(0, 2, 3, 1)
-            new_locs = new_locs[..., [1, 0]]
-        elif len(shape) == 3:
-            new_locs = new_locs.permute(0, 2, 3, 4, 1)
-            new_locs = new_locs[..., [2, 1, 0]]
-
-        return nnf.grid_sample(src, new_locs, align_corners=True, mode=self.mode)
 
 class DoubleConv(nn.Module):
     """(convolution => [BN] => ReLU) * 2"""
@@ -390,6 +318,7 @@ class Down(nn.Module):
     def forward(self, x):
         return self.maxpool_conv(x)
 
+
 class CNNEncoder(nn.Module):
     def __init__(self, config, n_channels=2):
         super(CNNEncoder, self).__init__()
@@ -415,12 +344,14 @@ class CNNEncoder(nn.Module):
             features.append(feats_down)
         return feats, features[::-1]
 
+
 class RegistrationHead(nn.Sequential):
     def __init__(self, in_channels, out_channels, kernel_size=3, upsampling=1):
         conv3d = nn.Conv3d(in_channels, out_channels, kernel_size=kernel_size, padding=kernel_size // 2)
         conv3d.weight = nn.Parameter(Normal(0, 1e-5).sample(conv3d.weight.shape))
         conv3d.bias = nn.Parameter(torch.zeros(conv3d.bias.shape))
         super().__init__(conv3d)
+
 
 class ViTVNet(nn.Module):
     def __init__(self, config, img_size=(64, 256, 256), int_steps=7, vis=False):
@@ -434,7 +365,7 @@ class ViTVNet(nn.Module):
         )
         self.spatial_trans = SpatialTransformer(img_size)
         self.config = config
-        #self.integrate = VecInt(img_size, int_steps)
+
     def forward(self, x):
 
         source = x[:,0:1,:,:]
@@ -442,29 +373,9 @@ class ViTVNet(nn.Module):
         x, attn_weights, features = self.transformer(x)  # (B, n_patch, hidden)
         x = self.decoder(x, features)
         flow = self.reg_head(x)
-        #flow = self.integrate(flow)
         out = self.spatial_trans(source, flow)
         return out, flow
 
-class VecInt(nn.Module):
-    """
-    Integrates a vector field via scaling and squaring.
-    Obtained from https://github.com/voxelmorph/voxelmorph
-    """
-
-    def __init__(self, inshape, nsteps):
-        super().__init__()
-
-        assert nsteps >= 0, 'nsteps should be >= 0, found: %d' % nsteps
-        self.nsteps = nsteps
-        self.scale = 1.0 / (2 ** self.nsteps)
-        self.transformer = SpatialTransformer(inshape)
-
-    def forward(self, vec):
-        vec = vec * self.scale
-        for _ in range(self.nsteps):
-            vec = vec + self.transformer(vec, vec)
-        return vec
 
 CONFIGS = {
     'ViT-V-Net': configs.get_3DReg_config(),

@@ -9,7 +9,7 @@ from models.ViTVNet import CONFIGS as CONFIGS_ViT
 from models.ViTVNet import ViTVNet
 from models.TransMorph import CONFIGS as CONFIGS_TM
 import models.TransMorph as TransMorph
-from models.VoxelMorph import VxmDense_1
+from models.VoxelMorph import VoxelMorph
 import argparse
 import matplotlib.pyplot as plt
 import nibabel as nib
@@ -39,8 +39,8 @@ def main():
         model = TransMorph.TransMorph(config)
         model_opt = TransMorph.TransMorph(config)
     elif args.model == "VoxelMorph":
-        model = VxmDense_1(img_size)
-        model_opt = VxmDense_1(img_size)
+        model = VoxelMorph(img_size)
+        model_opt = VoxelMorph(img_size)
     elif args.model == "ViTVNet":
         config_vit = CONFIGS_ViT['ViT-V-Net']
         model = ViTVNet(config_vit, img_size=img_size)

@@ -13,9 +13,7 @@ Swin transformer: Hierarchical vision transformer using shifted windows.
 arXiv preprint arXiv:2103.14030.
 
 Modified and tested by:
-Junyu Chen
-jchen245@jhmi.edu
-Johns Hopkins University
+Yicheng Chen, Shengxiang Ji, Yuelin Xin
 '''
 
 import torch
@@ -25,7 +23,10 @@ from timm.models.layers import DropPath, trunc_normal_, to_3tuple
 from torch.distributions.normal import Normal
 import torch.nn.functional as nnf
 import numpy as np
-import models.config_TransMorph as configs
+import configs.config_TransMorph as configs
+
+from utils.utils import SpatialTransformer
+
 
 class Mlp(nn.Module):
     def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0.):
@@ -76,6 +77,7 @@ def window_reverse(windows, window_size, H, W, L):
     x = windows.view(B, H // window_size[0], W // window_size[1], L // window_size[2], window_size[0], window_size[1], window_size[2], -1)
     x = x.permute(0, 1, 4, 2, 5, 3, 6, 7).contiguous().view(B, H, W, L, -1)
     return x
+
 
 class WindowAttention(nn.Module):
     """ Window based multi-head self attention (W-MSA) module with relative position bias.
@@ -204,7 +206,6 @@ class SwinTransformerBlock(nn.Module):
         self.W = None
         self.T = None
 
-
     def forward(self, x, mask_matrix):
         H, W, T = self.H, self.W, self.T
         B, L, C = x.shape
@@ -258,6 +259,7 @@ class SwinTransformerBlock(nn.Module):
 
         return x
 
+
 class PatchMerging(nn.Module):
     r""" Patch Merging Layer.
     Args:
@@ -302,6 +304,7 @@ class PatchMerging(nn.Module):
         x = self.reduction(x)
 
         return x
+
 
 class BasicLayer(nn.Module):
     """ A basic Swin Transformer layer for one stage.
@@ -456,6 +459,7 @@ class PatchEmbed(nn.Module):
 
         return x
 
+
 class SinusoidalPositionEmbedding(nn.Module):
     '''
     Rotary Position Embedding
@@ -510,6 +514,7 @@ class SinPositionalEncoding3D(nn.Module):
         emb[:,:,:,2*self.channels:] = emb_z
         emb = emb[None,:,:,:,:orig_ch].repeat(batch_size, 1, 1, 1, 1)
         return emb.permute(0, 4, 1, 2, 3)
+
 
 class SwinTransformer(nn.Module):
     r""" Swin Transformer
@@ -694,6 +699,7 @@ class SwinTransformer(nn.Module):
         super(SwinTransformer, self).train(mode)
         self._freeze_stages()
 
+
 class Conv3dReLU(nn.Sequential):
     def __init__(
             self,
@@ -754,6 +760,7 @@ class DecoderBlock(nn.Module):
         x = self.conv2(x)
         return x
 
+
 class RegistrationHead(nn.Sequential):
     def __init__(self, in_channels, out_channels, kernel_size=3, upsampling=1):
         conv3d = nn.Conv3d(in_channels, out_channels, kernel_size=kernel_size, padding=kernel_size // 2)
@@ -761,50 +768,6 @@ class RegistrationHead(nn.Sequential):
         conv3d.bias = nn.Parameter(torch.zeros(conv3d.bias.shape))
         super().__init__(conv3d)
 
-class SpatialTransformer(nn.Module):
-    """
-    N-D Spatial Transformer
-    Obtained from https://github.com/voxelmorph/voxelmorph
-    """
-
-    def __init__(self, size, mode='bilinear'):
-        super().__init__()
-
-        self.mode = mode
-
-        # create sampling grid
-        vectors = [torch.arange(0, s) for s in size]
-        grids = torch.meshgrid(vectors)
-        grid = torch.stack(grids)
-        grid = torch.unsqueeze(grid, 0)
-        grid = grid.type(torch.FloatTensor)
-
-        # registering the grid as a buffer cleanly moves it to the GPU, but it also
-        # adds it to the state dict. this is annoying since everything in the state dict
-        # is included when saving weights to disk, so the model files are way bigger
-        # than they need to be. so far, there does not appear to be an elegant solution.
-        # see: https://discuss.pytorch.org/t/how-to-register-buffer-without-polluting-state-dict
-        self.register_buffer('grid', grid)
-
-    def forward(self, src, flow):
-        # new locations
-        new_locs = self.grid + flow
-        shape = flow.shape[2:]
-
-        # need to normalize grid values to [-1, 1] for resampler
-        for i in range(len(shape)):
-            new_locs[:, i, ...] = 2 * (new_locs[:, i, ...] / (shape[i] - 1) - 0.5)
-
-        # move channels dim to last position
-        # also not sure why, but the channels need to be reversed
-        if len(shape) == 2:
-            new_locs = new_locs.permute(0, 2, 3, 1)
-            new_locs = new_locs[..., [1, 0]]
-        elif len(shape) == 3:
-            new_locs = new_locs.permute(0, 2, 3, 4, 1)
-            new_locs = new_locs[..., [2, 1, 0]]
-
-        return nnf.grid_sample(src, new_locs, align_corners=True, mode=self.mode)
 
 class TransMorph(nn.Module):
     def __init__(self, config):
@@ -880,15 +843,7 @@ class TransMorph(nn.Module):
         out = self.spatial_trans(source, flow)
         return out, flow
 
+
 CONFIGS = {
     'TransMorph': configs.get_3DTransMorph_config(),
-    'TransMorph-No-Conv-Skip': configs.get_3DTransMorphNoConvSkip_config(),
-    'TransMorph-No-Trans-Skip': configs.get_3DTransMorphNoTransSkip_config(),
-    'TransMorph-No-Skip': configs.get_3DTransMorphNoSkip_config(),
-    'TransMorph-Lrn': configs.get_3DTransMorphLrn_config(),
-    'TransMorph-Sin': configs.get_3DTransMorphSin_config(),
-    'TransMorph-No-RelPosEmbed': configs.get_3DTransMorphNoRelativePosEmbd_config(),
-    'TransMorph-Large': configs.get_3DTransMorphLarge_config(),
-    'TransMorph-Small': configs.get_3DTransMorphSmall_config(),
-    'TransMorph-Tiny': configs.get_3DTransMorphTiny_config(),
 }

@@ -8,15 +8,10 @@ from models.ViTVNet import CONFIGS as CONFIGS_ViT
 from models.ViTVNet import ViTVNet
 from models.TransMorph import CONFIGS as CONFIGS_TM
 import models.TransMorph as TransMorph
-<<<<<<< Updated upstream
-from models.VoxelMorph import VxmDense_1
-from utils.csv_logger import infer_csv 
-=======
 from models.VoxelMorph import VoxelMorph
 import argparse
 import nibabel as nib
 import time
->>>>>>> Stashed changes
 
 # parse the commandline
 parser = argparse.ArgumentParser()

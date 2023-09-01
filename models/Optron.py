@@ -1,6 +1,6 @@
 import numpy as np
 import torch.nn as nn
-import utils
+import utils.utils as utils
 
 
 class Optron(nn.Module):

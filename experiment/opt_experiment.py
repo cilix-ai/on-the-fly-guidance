@@ -13,7 +13,7 @@ from models.VoxelMorph import VxmDense_1
 import argparse
 import nibabel as nib
 from torch import optim
-import losses
+import utils.losses as losses
 
 from models.CNNOpt import CNNOpt
 from models.CascadeOpt import CascadeOpt_Vxm

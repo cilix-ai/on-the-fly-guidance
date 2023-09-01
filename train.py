@@ -1,4 +1,4 @@
-import os, utils, glob, losses
+import os, utils.utils as utils, glob, utils.losses as losses
 import sys
 from torch.utils.data import DataLoader
 from data import datasets, trans

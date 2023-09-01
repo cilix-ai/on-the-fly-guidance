@@ -1,4 +1,4 @@
-import os, utils, glob, sys
+import os, utils.utils as utils, glob, sys
 from torch.utils.data import DataLoader
 from data import datasets, trans
 import numpy as np

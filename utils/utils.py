@@ -1,4 +1,4 @@
-import losses
+import utils.losses as losses
 import numpy as np
 import torch.nn.functional as F
 import torch, sys

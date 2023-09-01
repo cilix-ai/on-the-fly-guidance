@@ -17,19 +17,23 @@ import nibabel as nib
 
 # parse the commandline
 parser = argparse.ArgumentParser()
-
 parser.add_argument('--dataset', type=str, default='IXI')
-parser.add_argument('--test_dir', type=str, default='../dataset/IXI_data/Val/')
-parser.add_argument('--atlas_dir', type=str, default='../dataset/IXI_data/atlas.pkl')
+parser.add_argument('--test_dir', type=str, default='../datasets/IXI_data/Val/')
+parser.add_argument('--atlas_dir', type=str, default='../datasets/IXI_data/atlas.pkl')
+parser.add_argument('--label_dir', type=str, default='../datasets/LPBA40/label/')
 parser.add_argument('--model', type=str, default='TransMorph')
 parser.add_argument('--model_dir', type=str, default='./experiments/trm/')
 parser.add_argument('--model_opt_dir', type=str, default='./experiments/trm_opt/')
-
+parser.add_argument('--save_dir', type=str, default='./results/imgs/')
 args = parser.parse_args()
 
 def main():
+    save_dir = args.save_dir + args.dataset + '/' + args.model + '/'
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+    
     """Initialize model"""
-    img_size = (160, 192, 224)
+    img_size = (160, 192, 160) if args.dataset == "LPBA" else (160, 192, 224)
     if args.model == "TransMorph":
         config = CONFIGS_TM['TransMorph']
         model = TransMorph.TransMorph(config)
@@ -51,12 +55,14 @@ def main():
         model_dir = args.model_dir
         model_opt_dir = args.model_opt_dir
     model_idx = -1
+    
+    # load weights of regular model
     best_model = torch.load(model_dir + natsorted(os.listdir(model_dir))[model_idx])['state_dict']
-    # print('Best model: {}'.format(natsorted(os.listdir(model_dir))[model_idx]))
     model.load_state_dict(best_model)
     model.eval()
     model.cuda()
     
+    # load weights of model with Optron
     best_model = torch.load(model_opt_dir + natsorted(os.listdir(model_opt_dir))[model_idx])['state_dict']
     model_opt.load_state_dict(best_model)
     model_opt.eval()
@@ -69,20 +75,24 @@ def main():
     
     
     """load test dataset"""
-    test_dir = args.test_dir    
+    test_dir = args.test_dir 
+    atlas_dir = args.atlas_dir
     if args.dataset == 'IXI':
-        atlas_dir = args.atlas_dir
         test_composed = transforms.Compose([trans.Seg_norm(), trans.NumpyType((np.float32, np.int16)),])
         test_set = datasets.IXIBrainInferDataset(glob.glob(test_dir + '*.pkl'), atlas_dir, transforms=test_composed)
-        test_loader = DataLoader(test_set, batch_size=1, shuffle=False, num_workers=1, pin_memory=True, drop_last=True)
     elif args.dataset == 'OASIS':
         test_composed = transforms.Compose([trans.NumpyType((np.float32, np.int16)),])
         test_set = datasets.OASISBrainInferDataset(glob.glob(test_dir + '*.pkl'), transforms=test_composed)
-        test_loader = DataLoader(test_set, batch_size=1, shuffle=False, num_workers=1, pin_memory=True, drop_last=True)
+    elif args.dataset == "LPBA":
+        test_composed = transforms.Compose([trans.Seg_norm(), trans.NumpyType((np.float32, np.int16))])
+        test_set = datasets.LPBAInferDataset(glob.glob(test_dir + '*.nii.gz'), atlas_dir, args.label_dir, transforms=test_composed)
     else:
         raise ValueError("Dataset name is wrong!")
+    test_loader = DataLoader(test_set, batch_size=1, shuffle=False, num_workers=1, pin_memory=True, drop_last=True)
+    
     
     '''Default: plot the registration results of the first image pair in test_loader'''
+    grid_img = mk_grid_img(8, 1, img_size)
     with torch.no_grad():
         for data in test_loader:
             data = [t.cuda() for t in data]
@@ -90,123 +100,139 @@ def main():
             y = data[1]
             x_seg = data[2]
             y_seg = data[3]
-            grid_img = mk_grid_img(8, 1, img_size)
             x_in = torch.cat((x,y),dim=1)
             
             # model
             x_def, flow = model(x_in)
             def_grid = reg_model_bilin([grid_img.float(), flow.cuda()])
             def_seg = reg_model([x_seg.cuda().float(), flow.cuda()])
-            flow = flow.cpu().detach().numpy()
-            rgb = def2rgb(flow[0])
+            flow = flow.cpu().detach().numpy()[0]
             
             # model_opt
             x_def_opt, flow_opt = model_opt(x_in)
             def_grid_opt = reg_model_bilin([grid_img.float(), flow_opt.cuda()])
             def_seg_opt = reg_model([x_seg.cuda().float(), flow_opt.cuda()])
-            flow_opt = flow_opt.cpu().detach().numpy()
-            rgb_opt = def2rgb(flow_opt[0])
-            
+            flow_opt = flow_opt.cpu().detach().numpy()[0]
+
+            # compute the min and max value of each channel of flow and flow_opt for normalization later
+            flow_min = np.min(flow, axis=(1, 2, 3))
+            flow_max = np.max(flow, axis=(1, 2, 3))
+            flow_opt_min = np.min(flow_opt, axis=(1, 2, 3))
+            flow_opt_max = np.max(flow_opt, axis=(1, 2, 3))
+            v_min = np.stack((flow_min, flow_opt_min)).min(v_min, axis=0)
+            v_max = np.stack((flow_max, flow_opt_max)).max(v_max, axis=0)
+
+            # transform the deformation field to RGB image
+            rgb = def2rgb(flow, v_min, v_max)
+            rgb_opt = def2rgb(flow_opt, v_min, v_max)
             break
     
     var = [x, y, x_seg, y_seg, x_def, x_def_opt, def_seg, def_seg_opt, def_grid, def_grid_opt]
     for i, _ in enumerate(var):
-        var[i] = var[i].cpu().detach().numpy()
+        var[i] = var[i].squeeze(0).squeeze(0).cpu().detach().numpy()
     x, y, x_seg, y_seg, x_def, x_def_opt, def_seg, def_seg_opt, def_grid, def_grid_opt = var
 
+    # save volumes and use other apps, like 3D-slicer, to open
     affine = np.eye(4)
-    x_nib = nib.Nifti1Image(x.squeeze(0).squeeze(0), affine)
+    
+    # raw images
+    x_nib = nib.Nifti1Image(x, affine)
     x_nib.header.get_xyzt_units()
-    x_nib.to_filename('./results/outputs/x.nii.gz')
-    y_nib = nib.Nifti1Image(y.squeeze(0).squeeze(0), affine)
+    x_nib.to_filename(save_dir + 'x.nii.gz')
+    y_nib = nib.Nifti1Image(y, affine)
     y_nib.header.get_xyzt_units()
-    y_nib.to_filename('./results/outputs/y.nii.gz')
+    y_nib.to_filename(save_dir + 'y.nii.gz')
     
-    x_seg_nib = nib.Nifti1Image(x_seg.squeeze(0).squeeze(0), affine)
+    # raw segmentaion labels
+    x_seg_nib = nib.Nifti1Image(x_seg, affine)
     x_seg_nib.header.get_xyzt_units()
-    x_seg_nib.to_filename('./results/outputs/x_seg.nii.gz')
-    y_seg_nib = nib.Nifti1Image(y_seg.squeeze(0).squeeze(0), affine)
+    x_seg_nib.to_filename(save_dir + 'x_seg.nii.gz')
+    y_seg_nib = nib.Nifti1Image(y_seg, affine)
     y_seg_nib.header.get_xyzt_units()
-    y_seg_nib.to_filename('./results/outputs/y_seg.nii.gz')
+    y_seg_nib.to_filename(save_dir + 'y_seg.nii.gz')
 
-    def_seg_nib = nib.Nifti1Image(def_seg.squeeze(0).squeeze(0), affine)
+    # deformed moving images
+    x_def_nib = nib.Nifti1Image(x_def, affine)
+    x_def_nib.header.get_xyzt_units()
+    x_def_nib.to_filename(save_dir + 'x_def.nii.gz')
+    x_def_opt_nib = nib.Nifti1Image(x_def_opt, affine)
+    x_def_opt_nib.header.get_xyzt_units()
+    x_def_opt_nib.to_filename(save_dir + 'x_def_optron.nii.gz')
+    
+    # deformed segmentation labels
+    def_seg_nib = nib.Nifti1Image(def_seg, affine)
     def_seg_nib.header.get_xyzt_units()
-    def_seg_nib.to_filename('./results/outputs/def_seg.nii.gz')
-    def_seg_opt_nib = nib.Nifti1Image(def_seg_opt.squeeze(0).squeeze(0), affine)
+    def_seg_nib.to_filename(save_dir + 'def_seg.nii.gz')
+    def_seg_opt_nib = nib.Nifti1Image(def_seg_opt, affine)
     def_seg_opt_nib.header.get_xyzt_units()
-    def_seg_opt_nib.to_filename('./results/outputs/def_seg_opt.nii.gz')
+    def_seg_opt_nib.to_filename(save_dir + 'def_seg_optron.nii.gz')
     
-    num_row, num_col = 3, 4
-    fig, axs = plt.subplots(num_row, num_col, figsize=(7, 5), squeeze=False, tight_layout={'pad': 0})
-
-    # fixed image
-    for j in range(num_row):
-        axs[j, 0].imshow(y[0, 0, :, 96, :], cmap='gray')
-        axs[j, 0].axis('off')
+    # deformation fields
+    flow_nib = nib.Nifti1Image(flow[None, ...].transpose(3, 4, 2, 0, 1),affine)
+    flow_nib.header.set_intent(1007)
+    flow_nib.to_filename(save_dir + 'disp.nii.gz')
+    flow_opt_nib = nib.Nifti1Image(flow_opt[None, ...].transpose(3, 4, 2, 0, 1), affine)
+    flow_opt_nib.header.set_intent(1007)
+    flow_opt_nib.to_filename(save_dir + 'disp_optron.nii.gz')
         
-    axs[0, 0].set_title('Fixed')
-    axs[0, 1].set_title('Moving')
-    # axs[1, 0].set_ylabel('TRM')
-    # axs[2, 0].set_ylabel("TRM_Opt")
+    idx = 0 
+    #! fixed image
+    plt.figure(++idx)
+    plt.axis('off')
+    plt.imshow(y[:, 96, :], cmap='gray')
+    plt.savefig(save_dir + 'fixed.png')
 
-    # moving image
-    axs[0, 1].imshow(x[0, 0, :, 96, :], cmap='gray')
-    axs[0, 1].axis('off')
+    #! moving image
+    plt.figure(++idx)
+    plt.axis('off')
+    plt.imshow(x[:, 96, :], cmap='gray')
+    plt.savefig(save_dir + 'moving.png')
     
-    axs[0, 2].set_visible(False)
-    axs[0, 3].set_visible(False)
+    #! warped moving image of model
+    plt.figure(++idx)
+    plt.axis('off')
+    plt.imshow(x_def[:, 96, :], cmap='gray')
+    plt.savefig(save_dir + 'warped.png')
     
-    # warped moving image of model
-    axs[1, 1].imshow(x_def[0, 0, :, 96, :], cmap='gray')
-    axs[1, 1].axis('off')
+    #! warped moving image of model_opt
+    plt.figure(++idx)
+    plt.axis('off')
+    plt.imshow(x_def_opt[:, 96, :], cmap='gray')
+    plt.savefig(save_dir + 'warped_optron.png')
     
-    # warped moving image of model_opt
-    axs[2, 1].imshow(x_def_opt[0, 0, :, 96, :], cmap='gray')
-    axs[2, 1].axis('off')
+    #! deformation field of model
+    plt.figure(++idx)
+    plt.axis('off')
+    plt.imshow(rgb[:, 96, :, :].astype('uint8'), origin='lower')
+    plt.savefig(save_dir + 'def_field.png')     
     
-    # deformation field of model
-    axs[1, 2].imshow(rgb[:, 96, :].astype('uint8'))
-    axs[1, 2].axis('off')    
+    #! deformation field of model_opt
+    plt.figure(++idx)
+    plt.axis('off')
+    plt.imshow(rgb_opt[:, 96, :, :].astype('uint8'))
+    plt.savefig(save_dir + 'def_field_optron.png')
     
-    # deformation field of model_opt
-    axs[2, 2].imshow(rgb_opt[:, 96, :].astype('uint8'))
-    axs[2, 2].axis('off')  
+    #! grid image of model
+    plt.figure(++idx)
+    plt.axis('off')
+    plt.imshow(def_grid[:, 96, :], cmap='gray')
+    plt.savefig(save_dir + 'def_grid.png')
     
-    # grid image of model
-    # axs[1, 3].set_visible(False)
-    axs[1, 3].imshow(def_grid[0, 0, :, 96, :], cmap='gray')
-    axs[1, 3].axis('off')    
-    
-    # grid image of model_opt
-    # axs[2, 3].set_visible(False)
-    axs[2, 3].imshow(def_grid_opt[0, 0, :, 96, :], cmap='gray')
-    axs[2, 3].axis('off')
-    
-    plt.tight_layout()
-    # plt.subplots_adjust(wspace=0.00005, hspace=0.005)
-    plt.show()               
+    #! grid image of model_opt
+    plt.figure(++idx)
+    plt.axis('off')
+    plt.imshow(def_grid_opt[:, 96, :], cmap='gray')
+    plt.savefig(save_dir + 'def_grid_optron.png')
 
 
-def def2rgb(disp):
+def def2rgb(disp, v_min, v_max):
     # Normalize deformation field
     C, H, W, L = disp.shape
     for i in range(C):
-        min = disp[i].min()
-        max = disp[i].max()
-        disp[i] = (disp[i] - min) / (max - min) # normalize to [0, 1]
-        disp[i] = (disp[i] * 255) # normalize to [0, 255]
-    
-    return np.transpose(disp, (1, 2, 3, 0))
+        disp[i] = (disp[i] - v_min[i]) / (v_max[i] - v_min[i]) # normalize to [0, 1]
+        disp[i] = disp[i] * 255
+    return np.transpose(disp, (3, 2, 1, 0))
 
-# def mk_grid_img(grid_step, line_thickness=1, grid_sz=(160, 192, 224)):
-#     grid_img = np.zeros(grid_sz)
-#     for j in range(0, grid_img.shape[1], grid_step):
-#         grid_img[:, j+line_thickness-1, :] = 1
-#     for i in range(0, grid_img.shape[2], grid_step):
-#         grid_img[:, :, i+line_thickness-1] = 1
-#     grid_img = grid_img[None, None, ...]
-#     grid_img = torch.from_numpy(grid_img).cuda()
-#     return grid_img
 
 def mk_grid_img(grid_step, line_thickness=1, grid_sz=(160, 192, 224)):
     grid_img = np.zeros(grid_sz)
@@ -217,7 +243,16 @@ def mk_grid_img(grid_step, line_thickness=1, grid_sz=(160, 192, 224)):
     grid_img = grid_img[None, None, ...]
     grid_img = torch.from_numpy(grid_img).cuda()
     return grid_img
-        
+
+
+def nib_load(file_name):
+    if not os.path.exists(file_name):
+        return np.array([1])
+
+    proxy = nib.load(file_name)
+    data = proxy.get_fdata()
+    proxy.uncache()
+    return data
 
 if __name__ == '__main__':
     main()

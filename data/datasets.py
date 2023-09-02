@@ -1,11 +1,9 @@
-import os, glob
-import torch, sys
-from torch.utils.data import Dataset
-from .data_utils import pkload
-import matplotlib.pyplot as plt
-import random
+import os, glob, random
+import torch
 import numpy as np
 import SimpleITK as sitk
+from torch.utils.data import Dataset
+from .data_utils import pkload
 
 
 class IXIBrainDataset(Dataset):
@@ -29,27 +27,10 @@ class IXIBrainDataset(Dataset):
         path = self.paths[index]
         x, x_seg = pkload(self.atlas_path)
         y, y_seg = pkload(path)
-        #print(x.shape)
-        #print(x.shape)
-        #print(np.unique(y))
-        # print(x.shape, y.shape)#(240, 240, 155) (240, 240, 155)
-        # transforms work with nhwtc
         x, y = x[None, ...], y[None, ...]
-        # print(x.shape, y.shape)#(1, 240, 240, 155) (1, 240, 240, 155)
         x,y = self.transforms([x, y])
-        #y = self.one_hot(y, 2)
-        #print(y.shape)
-        #sys.exit(0)
         x = np.ascontiguousarray(x)# [Bsize,channelsHeight,,Width,Depth]
         y = np.ascontiguousarray(y)
-        #plt.figure()
-        #plt.subplot(1, 2, 1)
-        #plt.imshow(x[0, :, :, 8], cmap='gray')
-        #plt.subplot(1, 2, 2)
-        #plt.imshow(y[0, :, :, 8], cmap='gray')
-        #plt.show()
-        #sys.exit(0)
-        #y = np.squeeze(y, axis=0)
         x, y = torch.from_numpy(x), torch.from_numpy(y)
         return x, y
 

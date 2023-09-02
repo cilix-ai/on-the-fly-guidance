@@ -1,11 +1,9 @@
-import os, glob
-import torch, sys
-from torch.utils.data import Dataset
-from .data_utils import pkload
-import matplotlib.pyplot as plt
-import random
+import os, glob, random
+import torch
 import numpy as np
 import SimpleITK as sitk
+from torch.utils.data import Dataset
+from .data_utils import pkload
 
 
 class IXIBrainDataset(Dataset):

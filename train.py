@@ -25,7 +25,9 @@ from data import datasets, trans
 import argparse
 
 
-# parse the commandline
+'''
+parse the command line arg
+'''
 parser = argparse.ArgumentParser()
 
 parser.add_argument('--batch_size', type=int, default=1)
@@ -93,10 +95,10 @@ def load_data():
 
 
 def main():
-    optron_epoch = args.optron_epoch
-    epoch_start = args.epoch_start
-    lr = args.training_lr
-    max_epoch = args.max_epoch
+    optron_epoch = args.optron_epoch # optimizer iteration
+    epoch_start = args.epoch_start # start epoch (use for continue training)
+    lr = args.training_lr # lr for model
+    max_epoch = args.max_epoch 
     model_idx = args.model_idx
     
     weights_model = [1, args.weight_model] # loss weighs of model loss
@@ -111,18 +113,18 @@ def main():
     img_size = (160, 192, 160) if args.dataset == 'LPBA' else (160, 192, 224)
     
     '''
-    Initialize model
+    initialize model
     '''
     model = load_model(img_size)
 
     '''
-    Initialize spatial transformation function
+    initialize spatial transformation function
     '''
     reg_model = utils.register_model(img_size, 'nearest')
     reg_model.cuda()
 
     '''
-    If continue from previous training
+    if continue from previous training
     '''
     if epoch_start:
         model_dir = 'checkpoints/' + save_dir
@@ -134,14 +136,14 @@ def main():
         updated_lr = lr
 
     '''
-    Initialize dataset
+    initialize dataset
     '''
     train_loader, val_loader = load_data()
     
     '''
-    Initializa optimizer and loss functions
+    initialize optimizer and loss functions
     '''
-    optimizer = optim.Adam(model.parameters(), lr=updated_lr, weight_decay=0, amsgrad=True)
+    adam = optim.Adam(model.parameters(), lr=updated_lr, weight_decay=0, amsgrad=True)
     criterion_ncc = losses.NCC_vxm()
     criterion_reg = losses.Grad3d(penalty='l2')
     criterion_mse = nn.MSELoss()
@@ -151,14 +153,14 @@ def main():
     for epoch in range(epoch_start, max_epoch):
         print('Training Starts')
         '''
-        Training
+        training
         '''
         loss_all = utils.AverageMeter()
         idx = 0
         for data in train_loader:
             idx += 1
             model.train()
-            adjust_learning_rate(optimizer, epoch, max_epoch, lr)
+            adjust_learning_rate(adam, epoch, max_epoch, lr)
             data = [t.cuda() for t in data]
             x = data[0]
             y = data[1]
@@ -166,9 +168,7 @@ def main():
             output = model(x_in)
 
             if optron_epoch:
-                '''
-                Initialize Optron
-                '''
+                '''initialize Optron'''
                 optron = Optron(img_size, output[1].clone().detach())
                 optron_optimizer = optim.Adam(optron.parameters(), lr=args.optron_lr, weight_decay=0, amsgrad=True)
                 adjust_learning_rate(optron_optimizer, epoch, max_epoch, args.optron_lr)
@@ -198,9 +198,9 @@ def main():
                 loss_all.update(loss.item(), y.numel())
 
             # compute gradient and do SGD step
-            optimizer.zero_grad()
+            adam.zero_grad()
             loss.backward()
-            optimizer.step()
+            adam.step()
 
             '''
             For OASIS dataset
@@ -209,9 +209,7 @@ def main():
                 y_in = torch.cat((y, x), dim=1)
                 output = model(y_in)
 
-                '''
-                Initialize Optron
-                '''
+                '''initialize Optron'''
                 if optron_epoch:
                     optron = Optron(img_size, output[1].clone().detach())
                     optron_optimizer = optim.Adam(optron.parameters(), lr=args.optron_lr, weight_decay=0, amsgrad=True)
@@ -238,16 +236,16 @@ def main():
                     loss_vals = [loss_ncc, loss_reg]
                 
                 loss_all.update(loss.item(), x.numel())
-                optimizer.zero_grad()
+                adam.zero_grad()
                 loss.backward()
-                optimizer.step()
+                adam.step()
 
-            current_lr = optimizer.state_dict()['param_groups'][0]['lr']
+            current_lr = adam.state_dict()['param_groups'][0]['lr']
             print('Epoch [{}/{}] Iter [{}/{}] - loss {:.4f}, Img Sim: {:.6f}, Reg: {:.6f}, lr: {:.6f}'.format(epoch, max_epoch, idx, len(train_loader), loss.item(), loss_vals[0].item(), loss_vals[1].item(), current_lr))
 
 
         '''
-        Validation
+        validation
         '''
         eval_dsc = utils.AverageMeter()
         eval_det = utils.AverageMeter()
@@ -260,9 +258,7 @@ def main():
                 output = model(x_in)
                 def_out = reg_model([x_seg.cuda().float(), output[1].cuda()])
 
-                '''
-                update DSC
-                '''
+                '''update DSC'''
                 if args.dataset == "OASIS":
                     dsc = utils.dice_OASIS(def_out.long(), y_seg.long())
                 elif args.dataset == "IXI":
@@ -271,27 +267,25 @@ def main():
                     dsc = utils.dice_LPBA(y_seg.cpu().detach().numpy(), def_out[0, 0, ...].cpu().detach().numpy())
                 eval_dsc.update(dsc.item(), x.size(0))
 
-                '''
-                update Jdet
-                '''
+                '''update Jdet'''
                 jac_det = utils.jacobian_determinant_vxm(output[1].detach().cpu().numpy()[0, :, :, :, :])
                 tar = y.detach().cpu().numpy()[0, 0, :, :, :]
                 eval_det.update(np.sum(jac_det <= 0) / np.prod(tar.shape), x.size(0))
         
-        '''
-        save model
-        '''
+        '''save model'''
         best_dsc = max(eval_dsc.avg, best_dsc)
         save_checkpoint({
             'epoch': epoch + 1,
             'state_dict': model.state_dict(),
             'best_dsc': best_dsc,
-            'optimizer': optimizer.state_dict(),
-        }, save_dir='checkpoints/' + save_dir, filename='dsc{:.3f}_epoch{:d}.pth.tar'.format(eval_dsc.avg, epoch))
-        
-        print('\nEpoch [{}/{}] - DSC: {:.6f}, Jdet: {:.8f}, loss: {:.6f}, lr: {:.6f}\n'.format(epoch, max_epoch, eval_dsc.avg, eval_det.avg, loss_all.avg, current_lr))
+            'optimizer': adam.state_dict(),
+        }, save_dir='checkpoints/' + save_dir, 
+        filename='dsc{:.3f}_epoch{:d}.pth.tar'.format(eval_dsc.avg, epoch))
+
+        print('\nEpoch [{}/{}] - DSC: {:.6f}, Jdet: {:.8f}, loss: {:.6f}, lr: {:.6f}\n'.format(
+            epoch, max_epoch, eval_dsc.avg, eval_det.avg, loss_all.avg, current_lr))
         log_csv(save_dir, epoch, eval_dsc.avg, eval_det.avg, loss_all.avg, current_lr)
-        
+
         loss_all.reset()
         torch.cuda.empty_cache()
 

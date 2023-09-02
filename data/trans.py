@@ -1,6 +1,7 @@
 import collections
 import numpy as np
 
+
 class Base(object):
     def sample(self, *shape):
         return shape
@@ -28,6 +29,7 @@ class Base(object):
         return 'Identity()'
 
 Identity = Base
+
 
 class RandomFlip(Base):
     # mirror flip across all x,y,z

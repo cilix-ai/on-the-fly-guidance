@@ -133,96 +133,23 @@ def main():
     x, y, x_seg, y_seg, x_def, x_def_opt, def_seg, def_seg_opt, def_grid, def_grid_opt = var
 
     # save volumes and use other apps, like 3D-slicer, to open
-    affine = np.eye(4)
+    var = [x, y, x_seg, y_seg, x_def, x_def_opt, def_seg, def_seg_opt, flow[None, ...].transpose(3, 4, 2, 0, 1), flow_opt[None, ...].transpose(3, 4, 2, 0, 1)]
+    file_name = ['x', 'y', 'x_seg', 'y_seg', 'x_def', 'x_def_optron', 'def_seg', 'def_seg_optron', 'disp', 'disp_optron']
+    for d, name in list(zip(var, file_name)):
+        nib_write(d, save_dir+name+'.nii.gz')
     
-    # raw images
-    x_nib = nib.Nifti1Image(x, affine)
-    x_nib.header.get_xyzt_units()
-    x_nib.to_filename(save_dir + 'x.nii.gz')
-    y_nib = nib.Nifti1Image(y, affine)
-    y_nib.header.get_xyzt_units()
-    y_nib.to_filename(save_dir + 'y.nii.gz')
-    
-    # raw segmentaion labels
-    x_seg_nib = nib.Nifti1Image(x_seg, affine)
-    x_seg_nib.header.get_xyzt_units()
-    x_seg_nib.to_filename(save_dir + 'x_seg.nii.gz')
-    y_seg_nib = nib.Nifti1Image(y_seg, affine)
-    y_seg_nib.header.get_xyzt_units()
-    y_seg_nib.to_filename(save_dir + 'y_seg.nii.gz')
-
-    # deformed moving images
-    x_def_nib = nib.Nifti1Image(x_def, affine)
-    x_def_nib.header.get_xyzt_units()
-    x_def_nib.to_filename(save_dir + 'x_def.nii.gz')
-    x_def_opt_nib = nib.Nifti1Image(x_def_opt, affine)
-    x_def_opt_nib.header.get_xyzt_units()
-    x_def_opt_nib.to_filename(save_dir + 'x_def_optron.nii.gz')
-    
-    # deformed segmentation labels
-    def_seg_nib = nib.Nifti1Image(def_seg, affine)
-    def_seg_nib.header.get_xyzt_units()
-    def_seg_nib.to_filename(save_dir + 'def_seg.nii.gz')
-    def_seg_opt_nib = nib.Nifti1Image(def_seg_opt, affine)
-    def_seg_opt_nib.header.get_xyzt_units()
-    def_seg_opt_nib.to_filename(save_dir + 'def_seg_optron.nii.gz')
-    
-    # deformation fields
-    flow_nib = nib.Nifti1Image(flow[None, ...].transpose(3, 4, 2, 0, 1),affine)
-    flow_nib.header.set_intent(1007)
-    flow_nib.to_filename(save_dir + 'disp.nii.gz')
-    flow_opt_nib = nib.Nifti1Image(flow_opt[None, ...].transpose(3, 4, 2, 0, 1), affine)
-    flow_opt_nib.header.set_intent(1007)
-    flow_opt_nib.to_filename(save_dir + 'disp_optron.nii.gz')
-        
-    idx = 0 
-    #! fixed image
-    plt.figure(++idx)
-    plt.axis('off')
-    plt.imshow(y[:, 96, :], cmap='gray')
-    plt.savefig(save_dir + 'fixed.png')
-
-    #! moving image
-    plt.figure(++idx)
-    plt.axis('off')
-    plt.imshow(x[:, 96, :], cmap='gray')
-    plt.savefig(save_dir + 'moving.png')
-    
-    #! warped moving image of model
-    plt.figure(++idx)
-    plt.axis('off')
-    plt.imshow(x_def[:, 96, :], cmap='gray')
-    plt.savefig(save_dir + 'warped.png')
-    
-    #! warped moving image of model_opt
-    plt.figure(++idx)
-    plt.axis('off')
-    plt.imshow(x_def_opt[:, 96, :], cmap='gray')
-    plt.savefig(save_dir + 'warped_optron.png')
-    
-    #! deformation field of model
-    plt.figure(++idx)
-    plt.axis('off')
-    plt.imshow(rgb[:, 96, :, :].astype('uint8'), origin='lower')
-    plt.savefig(save_dir + 'def_field.png')     
-    
-    #! deformation field of model_opt
-    plt.figure(++idx)
-    plt.axis('off')
-    plt.imshow(rgb_opt[:, 96, :, :].astype('uint8'))
-    plt.savefig(save_dir + 'def_field_optron.png')
-    
-    #! grid image of model
-    plt.figure(++idx)
-    plt.axis('off')
-    plt.imshow(def_grid[:, 96, :], cmap='gray')
-    plt.savefig(save_dir + 'def_grid.png')
-    
-    #! grid image of model_opt
-    plt.figure(++idx)
-    plt.axis('off')
-    plt.imshow(def_grid_opt[:, 96, :], cmap='gray')
-    plt.savefig(save_dir + 'def_grid_optron.png')
+    # save images
+    idx = 0
+    var = [x, y, x_def, x_def_opt, rgb, rgb_opt, def_grid, def_grid_opt]
+    file_name = ['fixed', 'moving', 'warped', 'warped_optron', 'def_field', 'def_field_optron', 'def_grid', 'def_grid_optron']
+    for v, name in list(zip(v, file_name)):
+        plt.figure(++idx)
+        plt.axis('off')
+        if v.shape[-1] == 3:
+            plt.imshow(v[:, 96, :, :].astype('uint8'))
+        else:
+            plt.imshow(v[:,  96, :], cmap='gray')
+        plt.savefig(save_dir+name+'.png')
 
 
 def def2rgb(disp, v_min, v_max):
@@ -253,6 +180,15 @@ def nib_load(file_name):
     data = proxy.get_fdata()
     proxy.uncache()
     return data
+
+def nib_write(data, save_dir):
+    data_nib = nib.Nifti1Image(data, np.eye(4))
+    if data.shape[-1] == 3:
+        data_nib.header.set_intent(1007)
+    else:
+        data_nib.header.get_xyzt_units()
+    data_nib.to_filename(save_dir)
+
 
 if __name__ == '__main__':
     main()

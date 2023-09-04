@@ -12,6 +12,7 @@ from models.VoxelMorph import VoxelMorph
 import argparse
 import nibabel as nib
 import time
+from utils.csv_logger import infer_csv
 
 # parse the commandline
 parser = argparse.ArgumentParser()

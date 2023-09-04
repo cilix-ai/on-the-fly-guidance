@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 import numpy as np
 import pandas as pd
+import os
 
 def read_csv(csv_file):
     df = pd.read_csv(csv_file, header=None)
@@ -31,18 +32,26 @@ def compare(normal, optron):
     plt.savefig('./imgs/comparison.png')
     
 if __name__ == '__main__':
-    optron = read_csv(csv_file='?')
-    normal = read_csv(csv_file='?')
+    optron = read_csv(csv_file='./logs/vxm_opt_lpba.csv')
+    normal = read_csv(csv_file='./logs/vxm_lpba.csv')
+    optron_save_dir = './imgs/vxm_opt_lpba/'
+    normal_save_dir = './imgs/vxm_lpba/'
+    if not os.path.exists(optron_save_dir):
+      os.makedirs(optron_save_dir)
+    if not os.path.exists(normal_save_dir):
+      os.makedirs(normal_save_dir)
     
-    plt.figure(1)
     compare(normal['DSC'], optron['DSC'])
+    plt.clf()
     
     # visualize train loss
-    plt.figure(2)
-    plot(data=optron['Loss'], metric='Loss', save_dir='./imgs/xxx_optron_xxx/')
-    plot(data=normal['Loss'], metric='Loss', save_dir='./imgs/xxx_xxx/')
+    plot(data=optron['Loss'], metric='Loss', save_dir=optron_save_dir)
+    plt.clf()
+    plot(data=normal['Loss'], metric='Loss', save_dir=normal_save_dir)
+    plt.clf()
     
     # visualize val Jdet
-    plt.figure(2)
-    plot(data=optron['Jdet'], metric='Jdet', save_dir='./imgs/xxx_optron_xxx/')
-    plot(data=normal['Jdet'], metric='Jdet', save_dir='./imgs/xxx_xxx/')
+    plot(data=optron['Jdet'], metric='Jdet', save_dir=optron_save_dir)
+    plt.clf()
+    plot(data=normal['Jdet'], metric='Jdet', save_dir=normal_save_dir)
+    plt.clf()

@@ -1,4 +1,4 @@
-import os, utils, glob, sys
+import os, utils.utils as utils, glob, sys
 from torch.utils.data import DataLoader
 from data import datasets, trans
 import numpy as np
@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 import nibabel as nib
 
 
+
 # parse the commandline
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', type=str, default='IXI')
@@ -22,9 +23,9 @@ parser.add_argument('--test_dir', type=str, default='../datasets/IXI_data/Val/')
 parser.add_argument('--atlas_dir', type=str, default='../datasets/IXI_data/atlas.pkl')
 parser.add_argument('--label_dir', type=str, default='../datasets/LPBA40/label/')
 parser.add_argument('--model', type=str, default='TransMorph')
-parser.add_argument('--model_dir', type=str, default='./experiments/trm/')
-parser.add_argument('--model_opt_dir', type=str, default='./experiments/trm_opt/')
-parser.add_argument('--save_dir', type=str, default='./results/imgs/')
+parser.add_argument('--model_dir', type=str, default='./checkpoints/trm/')
+parser.add_argument('--model_opt_dir', type=str, default='./checkpoints/trm_opt/')
+parser.add_argument('--save_dir', type=str, default='./results/')
 args = parser.parse_args()
 
 def main():
@@ -119,8 +120,8 @@ def main():
             flow_max = np.max(flow, axis=(1, 2, 3))
             flow_opt_min = np.min(flow_opt, axis=(1, 2, 3))
             flow_opt_max = np.max(flow_opt, axis=(1, 2, 3))
-            v_min = np.stack((flow_min, flow_opt_min)).min(v_min, axis=0)
-            v_max = np.stack((flow_max, flow_opt_max)).max(v_max, axis=0)
+            v_min = np.stack((flow_min, flow_opt_min)).min(axis=0)
+            v_max = np.stack((flow_max, flow_opt_max)).max(axis=0)
 
             # transform the deformation field to RGB image
             rgb = def2rgb(flow, v_min, v_max)
@@ -142,7 +143,7 @@ def main():
     idx = 0
     var = [x, y, x_def, x_def_opt, rgb, rgb_opt, def_grid, def_grid_opt]
     file_name = ['fixed', 'moving', 'warped', 'warped_optron', 'def_field', 'def_field_optron', 'def_grid', 'def_grid_optron']
-    for v, name in list(zip(v, file_name)):
+    for v, name in list(zip(var, file_name)):
         plt.figure(++idx)
         plt.axis('off')
         if v.shape[-1] == 3:

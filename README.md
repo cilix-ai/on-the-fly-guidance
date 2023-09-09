@@ -1,5 +1,7 @@
 # Optron
-Better image registration via optimizing in the loop.
+> Better image registration via optimizing in the loop.
+
+Optron is a general training archiecture incorporating the idea of optimizing in the loop. By iteratively optimizing the prediction result of a deep learning model through a plug-and-play optimizer module in the training loop, Optron introduces pseudo ground truth to an unsupervised training process. This pseudo supervision provides more direct guidance towards model training compared with unsupervised methods
 
 ## Overall Architecture
 <img width="1020" alt="optron-simple-trans" src="https://github.com/miraclefactory/optron/assets/89094576/fb6f9dd1-4fe2-42a8-969a-64e04d0ffe75">

@@ -143,7 +143,7 @@ def main():
             eval_dsc_def.update(dsc_trans.item(), x.size(0))
             eval_dsc_raw.update(dsc_raw.item(), x.size(0))
             
-            infer_csv(save_dir + csv_name, idx, dsc_raw.item(), dsc_trans.item(), Jdet, time_end - time_start)
+            infer_csv(save_dir, csv_name, idx, dsc_raw.item(), dsc_trans.item(), Jdet, time_end - time_start)
             print()
         
         print('Average:')
@@ -153,7 +153,7 @@ def main():
                                                                                     eval_dsc_raw.std))
         print('deformed det: {}, std: {}'.format(eval_det.avg, eval_det.std))
         print('time: {}s'.format(eval_time.avg))
-        infer_csv(save_dir + csv_name, 'avg', eval_dsc_raw.avg, eval_dsc_def.avg, eval_det.avg, eval_time.avg)
+        infer_csv(save_dir, csv_name, 'avg', eval_dsc_raw.avg, eval_dsc_def.avg, eval_det.avg, eval_time.avg)
         
 
 if __name__ == '__main__':

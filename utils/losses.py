@@ -3,6 +3,14 @@ import torch.nn.functional as F
 import numpy as np
 import math
 
+def smoothloss(y_pred):
+    d2, h2, w2 = y_pred.shape[-3:]
+    dy = torch.abs(y_pred[:,:,1:, :, :] - y_pred[:,:, :-1, :, :]) / 2 * d2
+    dx = torch.abs(y_pred[:,:,:, 1:, :] - y_pred[:,:, :, :-1, :]) / 2 * h2
+    dz = torch.abs(y_pred[:,:,:, :, 1:] - y_pred[:,:, :, :, :-1]) / 2 * w2
+    
+    return (torch.mean(dx * dx) + torch.mean(dy * dy) + torch.mean(dz * dz)) / 3.0
+
 class Grad3d(torch.nn.Module):
     """
     N-D gradient loss.

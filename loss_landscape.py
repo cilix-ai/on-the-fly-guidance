@@ -17,11 +17,13 @@ from models.Optron import Optron
 import utils.utils as utils
 import utils.losses as losses
 import argparse
+import pickle
 import warnings
 warnings.filterwarnings("ignore")
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--model', type=str, default='TransMorph')
+parser.add_argument('--optron', action='store_true')
 parser.add_argument('--weights', type=str, default='./checkpoints/LPBA/trm_opt/dsc0.684_epoch332.pth.tar')
 
 parser.add_argument('--dataset', type=str, default='LPBA')
@@ -30,29 +32,59 @@ parser.add_argument('--label_dir', type=str, default='./datasets/LPBA40/label/')
 parser.add_argument('--atlas_dir', type=str, default='./datasets/LPBA40/atlas.nii.gz')
 
 parser.add_argument('--seed', type=int, default=42)
-parser.add_argument('--step_size', type=int, default=0.2)
-parser.add_argument('--resolution', type=int, default=10)
+
+parser.add_argument('--loss_grid', type=str, default=None)
+parser.add_argument('--step_size', type=int, default=0.1)
+parser.add_argument('--resolution', type=int, default=20)
+# parser.add_argument('--stride', type=int, default=2)
 args = parser.parse_args()
 
-def visualize_loss_landscape(model, dataloader, dir1, dir2, res, step_size, optim_point):
-    x_grid, y_grid = np.meshgrid(np.arange(-res, res, 1), np.arange(-res, res, 1))
-    loss_grid = np.zeros_like(x_grid).astype('float')
-    shapes = get_param_shapes(model)
-
-    # Compute the loss for each point in the grid
-    print('Computing losses for each point in the grid...')
-    with torch.no_grad():
-        for i in range(-res, res):
-            for j in range(-res, res):
-                params_new = (
-                    optim_point + 
-                    i * step_size * dir1 +
-                    j * step_size * dir2
-                )
-                init_from_flat_params(model, params_new, shapes)
-                loss = compute_loss(model, dataloader)
-                loss_grid[i][j] = loss
-                print(f'({i}, {j}): {loss}')
+def visualize_loss_landscape(model, dataloader, dir1, dir2, res, step_size, optim_point, loss_grid_file):
+    # Compute loss_grid
+    if loss_grid_file:
+        print('Loading loss_grid...')
+        data = pickle.load(open(loss_grid_file, 'rb'))
+        loss_grid = data['loss_grid']
+        res = data['resolution']
+        # stride = data['stride']
+        x_grid, y_grid = np.meshgrid(np.arange(-res, res+1, 1), np.arange(-res, res+1, 1))
+    else:
+        print('Computing losses for each point in the grid...')
+        x_grid, y_grid = np.meshgrid(np.arange(-res, res+1, 1), np.arange(-res, res+1, 1))
+        shapes = get_param_shapes(model)
+        loss_grid = np.zeros_like(x_grid).astype('float')
+        with torch.no_grad():
+            for i in range(-res, res+1):
+                for j in range(-res, res+1):
+                    params_new = (
+                        optim_point + 
+                        i * step_size * dir1 +
+                        j * step_size * dir2
+                    )
+                    init_from_flat_params(model, params_new, shapes)
+                    loss = compute_loss(model, dataloader)
+                    loss_grid[i][j] = loss
+                    print(f'({i}, {j}): {loss}')
+            
+            # save loss_grid to a pickle file
+            data = {
+                'random_seed': args.seed,
+                'direction1': dir1.cpu(),
+                'direction2': dir2.cpu(),
+                'step_size': step_size,
+                'resolution': res,
+                # 'stride': stride,
+                'loss_grid': loss_grid
+            }
+            save_dir = './loss_grids'
+            if not os.path.exists(save_dir):
+                os.makedirs(save_dir)
+            if args.optron:
+                save_file = open(save_dir + f'/{args.dataset}_{args.model}_opt_{args.seed}_{step_size}_{res}.pkl', 'wb')
+            else:
+                save_file = open(save_dir + f'/{args.dataset}_{args.model}_{args.seed}_{step_size}_{res}.pkl', 'wb')
+            pickle.dump(data, save_file)
+            save_file.close()
     
     # normalize loss_grid
     # print(loss_grid.min(), loss_grid.max(), loss_grid.max() - loss_grid.min())
@@ -67,11 +99,16 @@ def visualize_loss_landscape(model, dataloader, dir1, dir2, res, step_size, opti
     ax.set_xlabel('dir1')
     ax.set_ylabel('dir2')
     ax.set_zlabel('Loss')
-    # ax.set_zlim(loss_grid.min(), loss_grid.max())
+    # ax.set_ylim(ax.get_ylim()[::-1])
     plt.show()
-    # scatter = ax.scatter(x, y, z, c=colors, cmap='viridis')  # cmap 参数指定了颜色的映射方式，这里使用了 'viridis'
-    # plt.colorbar(scatter, label='Z Value')
-    plt.savefig('./loss_landscape.png')
+    save_dir = './loss_landscapes'
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+    if args.optron:
+        name = f'/{args.dataset}_{args.model}_opt_{args.seed}_{step_size}_{res}.png'
+    else:
+        name =  f'/{args.dataset}_{args.model}_{args.seed}_{step_size}_{res}.png'
+    plt.savefig(save_dir + name)
       
 def compute_loss(model, dataloader):
     model.eval()
@@ -177,4 +214,4 @@ if __name__ == '__main__':
     dir1 = torch.from_numpy(dir1).cuda()
     dir2 = torch.from_numpy(dir2).cuda()
     
-    visualize_loss_landscape(model, val_loader, dir1, dir2, args.resolution, args.step_size, optim_params)
+    visualize_loss_landscape(model, val_loader, dir1, dir2, args.resolution, args.step_size, optim_params, args.loss_grid)

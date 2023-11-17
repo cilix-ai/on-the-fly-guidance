@@ -63,7 +63,7 @@ def visualize_loss_landscape(model, dataloader, dir1, dir2, res, step_size, opti
     # Plot the loss landscape
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
-    ax.plot_surface(x_grid, y_grid, loss_grid, rstride=0.1, cstride=0.1, cmap='rainbow')
+    ax.plot_surface(x_grid, y_grid, loss_grid, rstride=1, cstride=1, cmap='rainbow')
     ax.set_xlabel('dir1')
     ax.set_ylabel('dir2')
     ax.set_zlabel('Loss')

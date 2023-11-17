@@ -59,8 +59,8 @@ def visualize_loss_landscape(model, dataloader, dir1, dir2, res, step_size, opti
                 for j in range(0, 2 * res + 1):
                     params_new = (
                         optim_point + 
-                        i * step_size * dir1 +
-                        j * step_size * dir2
+                        (i-res) * step_size * dir1 +
+                        (j-res) * step_size * dir2
                     )
                     init_from_flat_params(model, params_new, shapes)
                     loss = compute_loss(model, dataloader)

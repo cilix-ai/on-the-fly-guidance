@@ -33,9 +33,10 @@ parser.add_argument('--atlas_dir', type=str, default='./datasets/LPBA40/atlas.ni
 
 parser.add_argument('--seed', type=int, default=42)
 
+# parser.add_argument('--loss_grid', type=str, default='./loss_grids/LPBA_TransMorph_42_0.1_20.pkl')
 parser.add_argument('--loss_grid', type=str, default=None)
 parser.add_argument('--step_size', type=int, default=0.1)
-parser.add_argument('--resolution', type=int, default=20)
+parser.add_argument('--resolution', type=int, default=2)
 # parser.add_argument('--stride', type=int, default=2)
 args = parser.parse_args()
 
@@ -54,8 +55,8 @@ def visualize_loss_landscape(model, dataloader, dir1, dir2, res, step_size, opti
         shapes = get_param_shapes(model)
         loss_grid = np.zeros_like(x_grid).astype('float')
         with torch.no_grad():
-            for i in range(-res, res+1):
-                for j in range(-res, res+1):
+            for i in range(0, 2 * res + 1):
+                for j in range(0, 2 * res + 1):
                     params_new = (
                         optim_point + 
                         i * step_size * dir1 +
@@ -64,7 +65,7 @@ def visualize_loss_landscape(model, dataloader, dir1, dir2, res, step_size, opti
                     init_from_flat_params(model, params_new, shapes)
                     loss = compute_loss(model, dataloader)
                     loss_grid[i][j] = loss
-                    print(f'({i}, {j}): {loss}')
+                    print(f'({i-res}, {j-res}): {loss}')
             
             # save loss_grid to a pickle file
             data = {
@@ -90,7 +91,7 @@ def visualize_loss_landscape(model, dataloader, dir1, dir2, res, step_size, opti
     # print(loss_grid.min(), loss_grid.max(), loss_grid.max() - loss_grid.min())
     # print(loss_grid - loss_grid.min())
     loss_grid = (loss_grid - loss_grid.min()) / (loss_grid.max() - loss_grid.min())
-    print(loss_grid)
+    # print(loss_grid.T)
     
     # Plot the loss landscape
     fig = plt.figure()
@@ -100,6 +101,7 @@ def visualize_loss_landscape(model, dataloader, dir1, dir2, res, step_size, opti
     ax.set_ylabel('dir2')
     ax.set_zlabel('Loss')
     # ax.set_ylim(ax.get_ylim()[::-1])
+    # ax.set_xlim(ax.get_xlim()[::-1])
     plt.show()
     save_dir = './loss_landscapes'
     if not os.path.exists(save_dir):

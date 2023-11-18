@@ -23,32 +23,30 @@ warnings.filterwarnings("ignore")
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--model', type=str, default='TransMorph')
-parser.add_argument('--optron', action='store_true')
-# parser.add_argument('--weights', type=str, default='./checkpoints/IXI/trm/dsc0.744_epoch385.pth.tar')
-parser.add_argument('--weights', type=str, default='./checkpoints/IXI/trm_opt/dsc0.760.pth.tar')
+parser.add_argument('--strategy', type=str, default='self_training')
+parser.add_argument('--weights', type=str, default='./checkpoints/LPBA/trm/tsm_lpba.pth.tar')
 
-parser.add_argument('--dataset', type=str, default='IXI')
-parser.add_argument('--val_dir', type=str, default='./datasets/IXI_data/Val/')
-parser.add_argument('--label_dir', type=str, default='./datasets/IXI_data/label/')
-parser.add_argument('--atlas_dir', type=str, default='./datasets/IXI_data/atlas.pkl')
+parser.add_argument('--dataset', type=str, default='LPBA')
+parser.add_argument('--val_dir', type=str, default='./datasets/LPBA40/test/')
+parser.add_argument('--label_dir', type=str, default='./datasets/LPBA40/label/')
+parser.add_argument('--atlas_dir', type=str, default='./datasets/LPBA40/atlas.nii.gz')
+parser.add_argument('--pseudo_dir', type=str, default='./datasets/LPBA40/pseudo/TransMorph/')
 
 parser.add_argument('--seed', type=int, default=42)
 
-# parser.add_argument('--loss_grid', type=str, default='./loss_grids/IXI_TransMorph_42_0.01_5.pkl')
+# parser.add_argument('--loss_grid', type=str, default='./loss_grids/LPBA_TransMorph_self_training_42_0.005_10.pkl')
 parser.add_argument('--loss_grid', type=str, default=None)
-parser.add_argument('--step_size', type=int, default=0.01)
+parser.add_argument('--step_size', type=int, default=0.001)
 parser.add_argument('--resolution', type=int, default=10)
-# parser.add_argument('--stride', type=int, default=2)
 args = parser.parse_args()
 
 def visualize_loss_landscape(model, dataloader, dir1, dir2, res, step_size, optim_point, loss_grid_file):
-    # Compute loss_grid
+    #! Compute loss_grid
     if loss_grid_file:
         print('Loading loss_grid...')
         data = pickle.load(open(loss_grid_file, 'rb'))
         loss_grid = data['loss_grid']
         res = data['resolution']
-        # stride = data['stride']
         x_grid, y_grid = np.meshgrid(np.arange(-res, res+1, 1), np.arange(-res, res+1, 1))
     else:
         print('Computing losses for each point in the grid...')
@@ -67,72 +65,61 @@ def visualize_loss_landscape(model, dataloader, dir1, dir2, res, step_size, opti
                 loss = compute_loss(model, dataloader)
                 loss_grid[i][j] = loss
                 print(f'({i-res}, {j-res}): {loss}')
-        # x_grid, y_grid = np.meshgrid(np.arange(-res, res+1, 0.2), np.arange(-res, res+1, 0.2))
-        # x_grid = np.linspace(-2, 2, res)
-        # y_grid = np.linspace(-2, 2, res)
-        # x_grid, y_grid = np.meshgrid(x_grid, y_grid)
-        # shapes = get_param_shapes(model)
-        # loss_grid = np.zeros_like(x_grid).astype('float')
-        # with torch.no_grad():
-        #     for i in range(res):
-        #         for j in range(res):
-        #             params_new = (
-        #                 optim_point + 
-        #                 x_grid[i][j] * dir1 +
-        #                 y_grid[i][j] * dir2
-        #             )
-        #             init_from_flat_params(model, params_new, shapes)
-        #             loss = compute_loss(model, dataloader)
-        #             loss_grid[i][j] = loss
-        #             print(f'({x_grid[i][j]}, {y_grid[i][j]}): {loss}')
-                    
-            # save loss_grid to a pickle file
-            data = {
-                'random_seed': args.seed,
-                'direction1': dir1.cpu(),
-                'direction2': dir2.cpu(),
-                'step_size': step_size,
-                'resolution': res,
-                # 'stride': stride,
-                'loss_grid': loss_grid
-            }
-            save_dir = './loss_grids'
-            if not os.path.exists(save_dir):
-                os.makedirs(save_dir)
-            if args.optron:
-                save_file = open(save_dir + f'/{args.dataset}_{args.model}_opt_{args.seed}_{step_size}_{res}.pkl', 'wb')
-            else:
-                save_file = open(save_dir + f'/{args.dataset}_{args.model}_{args.seed}_{step_size}_{res}.pkl', 'wb')
-            pickle.dump(data, save_file)
-            save_file.close()
+
+        #! save loss_grid to a pickle file
+        data = {
+            'random_seed': args.seed,
+            'direction1': dir1.cpu(),
+            'direction2': dir2.cpu(),
+            'step_size': step_size,
+            'resolution': res,
+            'loss_grid': loss_grid
+        }
+        save_dir = './loss_grids'
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+        if args.strategy == 'OFG':
+            save_file = open(save_dir + f'/{args.dataset}_{args.model}_OFG_{args.seed}_{step_size}_{res}.pkl', 'wb')
+        elif args.strategy == 'self_training':
+            save_file = open(save_dir + f'/{args.dataset}_{args.model}_self_training_{args.seed}_{step_size}_{res}.pkl', 'wb')
+        else:
+            save_file = open(save_dir + f'/{args.dataset}_{args.model}_{args.seed}_{step_size}_{res}.pkl', 'wb')
+        pickle.dump(data, save_file)
+        save_file.close()
     
-    # normalize loss_grid
-    # print(loss_grid.min(), loss_grid.max(), loss_grid.max() - loss_grid.min())
-    # print(loss_grid - loss_grid.min())
+    #! normalize loss_grid
     loss_grid = (loss_grid - loss_grid.min()) # / (loss_grid.max() - loss_grid.min())
-    # loss_grid = (loss_grid - loss_grid.mean()) / loss_grid.std()
-    # print(loss_grid.T)
     
-    # Plot the loss landscape
+    #! Plot the loss landscape
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
-    surf = ax.plot_surface(x_grid, y_grid, loss_grid, rstride=1, cstride=1, cmap='viridis')
+    ax.plot_surface(x_grid, y_grid, loss_grid, rstride=1, cstride=1, cmap='viridis')
     # ax.contourf(x_grid, y_grid, loss_grid, zdir='z',offset=0, cmap='viridis')
-    ax.set_xlabel('dir1')
-    ax.set_ylabel('dir2')
-    ax.set_zlabel('Loss')    
-    ax.grid(False)
-    # fig.colorbar(surf, shrink=0.5, aspect=5)
-    
+    # ax.set_xlabel('dir1')
+    # ax.set_ylabel('dir2')
+    # ax.set_zlabel('Loss')  
+    ax.view_init(elev=10, azim=45)
+    ax.xaxis.set_ticks([])
+    ax.yaxis.set_ticks([])
+    # ax.zaxis.set_ticks(np.linspace(0, 1, 10))
+    # ax.set_zlim(0, 2)
+    # ax.set_xlim(-2, 2)
+    # ax.set_ylim(-2, 2)
+    ax.xaxis.grid(False)
+    ax.yaxis.grid(False)    
+
     save_dir = './loss_landscapes/'
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
-    if args.optron:
-        name = f'{args.dataset}_{args.model}_opt_{args.seed}_{step_size}_{res}'
+    if args.strategy == 'OFG':
+        name = f'{args.dataset}_{args.model}_OFG_{args.seed}_{step_size}_{res}.png'
+    elif args.strategy == 'self_training':
+        name = f'{args.dataset}_{args.model}_self_training_{args.seed}_{step_size}_{res}.png'
     else:
-        name =  f'{args.dataset}_{args.model}_{args.seed}_{step_size}_{res}'
+        name =  f'{args.dataset}_{args.model}_{args.seed}_{step_size}_{res}.png'
     plt.title(name)
-    plt.savefig(save_dir + name + '.png')
+    # plt.colorbar()
+    plt.savefig(save_dir + name)
       
 def compute_loss(model, dataloader):
     model.eval()
@@ -141,7 +128,9 @@ def compute_loss(model, dataloader):
     criterion_reg = losses.Grad3d(penalty='l2')
     criterion_mse = nn.MSELoss()
     
+    idx = 0
     for data in dataloader:
+        idx += 1
         with torch.no_grad():
             data = [t.cuda() for t in data]
             x = data[0]
@@ -149,8 +138,8 @@ def compute_loss(model, dataloader):
             x_in = torch.cat((x,y), dim=1)
             output = model(x_in)
         
-        if args.optron:
-            '''initialize Optron'''
+        if args.strategy == 'OFG':
+            '''initialize OFG'''
             optron = Optron(img_size, output[1].clone().detach())
             optron_optimizer = optim.Adam(optron.parameters(), lr=1e-1, weight_decay=0, amsgrad=True)
 
@@ -167,8 +156,15 @@ def compute_loss(model, dataloader):
             x_warped, optimized_flow = optron(x)
         
         with torch.no_grad():
-            if args.optron:
+            if args.strategy == 'optron':
                 loss_mse = criterion_mse(output[1], optimized_flow) * 1
+                loss_reg = criterion_reg(output[1], y) * 0.02
+                loss = loss_mse + loss_reg
+                del loss_mse, loss_reg
+            elif args.strategy == 'self_training':
+                with open(args.pseudo_dir + '{}.pckl'.format(idx), 'rb') as f:
+                    pseudo_disp = pickle.load(f)
+                loss_mse = criterion_mse(output[1], pseudo_disp) * 1
                 loss_reg = criterion_reg(output[1], y) * 0.02
                 loss = loss_mse + loss_reg
                 del loss_mse, loss_reg
@@ -251,6 +247,7 @@ def unflatten_to_state_dict(flat_w, shapes):
 if __name__ == '__main__':
     img_size = (160, 192, 160) if args.dataset == 'LPBA' else (160, 192, 224)
     model = load_model(img_size)
+    model.cuda()
     pretrained = torch.load(args.weights)['state_dict']
     model.load_state_dict(pretrained)
     
@@ -264,6 +261,7 @@ if __name__ == '__main__':
     dir1 = np.random.normal(size=optim_params.shape)
     # dir1 = dir1 / np.linalg.norm(dir1)
     dir2 = np.random.normal(size=optim_params.shape)
+    # dir2 -= dir2.dot(dir1) * dir1
     # dir2 = dir2 / np.linalg.norm(dir2)
     dir1 = torch.from_numpy(dir1).cuda()
     dir2 = torch.from_numpy(dir2).cuda()

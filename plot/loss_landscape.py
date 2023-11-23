@@ -86,10 +86,10 @@ def visualize_loss_landscape(model, dataloader, dir1, dir2, res, step_size, opti
             save_file = open(save_dir + f'/{args.dataset}_{args.model}_{args.seed}_{step_size}_{res}.pkl', 'wb')
         pickle.dump(data, save_file)
         save_file.close()
-    
+
     #! normalize loss_grid
     loss_grid = (loss_grid - loss_grid.min()) # / (loss_grid.max() - loss_grid.min())
-    
+
     #! Plot the loss landscape
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
@@ -120,14 +120,14 @@ def visualize_loss_landscape(model, dataloader, dir1, dir2, res, step_size, opti
     plt.title(name)
     # plt.colorbar()
     plt.savefig(save_dir + name)
-      
+
 def compute_loss(model, dataloader):
     model.eval()
     loss_all = utils.AverageMeter()
     criterion_ncc = losses.NCC_vxm()
     criterion_reg = losses.Grad3d(penalty='l2')
     criterion_mse = nn.MSELoss()
-    
+
     idx = 0
     for data in dataloader:
         idx += 1
@@ -137,13 +137,13 @@ def compute_loss(model, dataloader):
             y = data[1]
             x_in = torch.cat((x,y), dim=1)
             output = model(x_in)
-        
+
         if args.strategy == 'OFG':
             '''initialize OFG'''
             optron = Optron(img_size, output[1].clone().detach())
             optron_optimizer = optim.Adam(optron.parameters(), lr=1e-1, weight_decay=0, amsgrad=True)
 
-            for i in range(10):
+            for _ in range(10):
                 x_warped, optimized_flow = optron(x)
                 optron_loss_ncc = criterion_ncc(x_warped, y) * 1
                 optron_loss_reg = criterion_reg(optimized_flow, y) * 1
@@ -152,9 +152,9 @@ def compute_loss(model, dataloader):
                 optron_optimizer.zero_grad()
                 optron_loss.backward()
                 optron_optimizer.step()
-            
+
             x_warped, optimized_flow = optron(x)
-        
+
         with torch.no_grad():
             if args.strategy == 'optron':
                 loss_mse = criterion_mse(output[1], optimized_flow) * 1
@@ -174,11 +174,11 @@ def compute_loss(model, dataloader):
                 loss = loss_ncc + loss_reg
                 del loss_ncc, loss_reg
             loss_all.update(loss.item(), y.numel())
-        
+
             del loss
-    
+
     return loss_all.avg
-    
+
 def load_model(img_size):
     if args.model == 'TransMorph':
         config = CONFIGS_TM['TransMorph']
@@ -192,7 +192,7 @@ def load_model(img_size):
         config = CONFIGS_ViT['ViT-V-Net']
         model = ViTVNet(config, img_size=img_size)
     model.cuda()
-    
+
     return model
 
 def load_data():
@@ -206,7 +206,7 @@ def load_data():
         val_set = datasets.LPBAInferDataset(glob.glob(args.val_dir + '*.nii.gz'), args.atlas_dir, args.label_dir, transforms=None)
 
     val_loader = DataLoader(val_set, batch_size=1, shuffle=False, num_workers=0, pin_memory=False, drop_last=True)
-    
+
     return val_loader
 
 def get_flat_params(model):
@@ -243,7 +243,7 @@ def unflatten_to_state_dict(flat_w, shapes):
     assert counter == len(flat_w), "counter must reach the end of weight vector"
     return state_dict
 
-    
+
 if __name__ == '__main__':
     img_size = (160, 192, 160) if args.dataset == 'LPBA' else (160, 192, 224)
     model = load_model(img_size)

@@ -271,7 +271,7 @@ def main():
                 jac_det = utils.jacobian_determinant_vxm(output[1].detach().cpu().numpy()[0, :, :, :, :])
                 tar = y.detach().cpu().numpy()[0, 0, :, :, :]
                 eval_det.update(np.sum(jac_det <= 0) / np.prod(tar.shape), x.size(0))
-        
+
         '''save model'''
         best_dsc = max(eval_dsc.avg, best_dsc)
         save_checkpoint({

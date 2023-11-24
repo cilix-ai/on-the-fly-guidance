@@ -13,7 +13,7 @@ from models.ViTVNet import ViTVNet
 from models.TransMorph import CONFIGS as CONFIGS_TM
 from models.TransMorph import TransMorph
 from models.VoxelMorph import VoxelMorph
-from models.Optron import Optron
+from models.OFG import OFG
 
 import utils.utils as utils
 import utils.losses as losses
@@ -41,11 +41,11 @@ parser.add_argument('--atlas_dir', type=str, default='../autodl-tmp/IXI_data/atl
 parser.add_argument('--model', type=str, default='TransMorph')
 
 parser.add_argument('--training_lr', type=float, default=1e-4)
-parser.add_argument('--optron_lr', type=float, default=1e-1)
+parser.add_argument('--ofg_lr', type=float, default=1e-1)
 parser.add_argument('--epoch_start', type=int, default=0)
 parser.add_argument('--max_epoch', type=int, default=500)
 
-parser.add_argument('--optron_epoch', type=int, default=10, help='the number of iterations in optimization, 0 represents no optimization')
+parser.add_argument('--ofg_epoch', type=int, default=10, help='the number of iterations in optimization, 0 represents no optimization')
 
 parser.add_argument('--weight_model', type=float, default=0.02)
 parser.add_argument('--weight_opt', type=float, default=1)
@@ -95,7 +95,7 @@ def load_data():
 
 
 def main():
-    optron_epoch = args.optron_epoch # optimizer iteration
+    ofg_epoch = args.ofg_epoch # optimizer iteration
     epoch_start = args.epoch_start # start epoch (use for continue training)
     lr = args.training_lr # lr for model
     max_epoch = args.max_epoch 
@@ -104,7 +104,7 @@ def main():
     weights_model = [1, args.weight_model] # loss weighs of model loss
     weights_opt = [1, args.weight_opt] # loss weights of optimizer
 
-    save_dir = '{}_{}{}/'.format(args.model, args.dataset, '_opt' if optron_epoch else '')
+    save_dir = '{}_{}{}/'.format(args.model, args.dataset, '_opt' if ofg_epoch else '')
     if not os.path.exists('checkpoints/'+save_dir):
         os.makedirs('checkpoints/'+save_dir)
     if not os.path.exists('logs/'+save_dir):
@@ -167,23 +167,23 @@ def main():
             x_in = torch.cat((x,y), dim=1)
             output = model(x_in)
 
-            if optron_epoch:
-                '''initialize Optron'''
-                optron = Optron(img_size, output[1].clone().detach())
-                optron_optimizer = optim.Adam(optron.parameters(), lr=args.optron_lr, weight_decay=0, amsgrad=True)
-                adjust_learning_rate(optron_optimizer, epoch, max_epoch, args.optron_lr)
+            if ofg_epoch:
+                '''initialize ofg'''
+                ofg = OFG(img_size, output[1].clone().detach())
+                ofg_optimizer = optim.Adam(ofg.parameters(), lr=args.ofg_lr, weight_decay=0, amsgrad=True)
+                adjust_learning_rate(ofg_optimizer, epoch, max_epoch, args.ofg_lr)
 
-                for i in range(args.optron_epoch):
-                    x_warped, optimized_flow = optron(x)
-                    optron_loss_ncc = criterion_ncc(x_warped, y) * weights_opt[0]
-                    optron_loss_reg = criterion_reg(optimized_flow, y) * weights_opt[1]
-                    optron_loss = optron_loss_ncc + optron_loss_reg
+                for i in range(args.ofg_epoch):
+                    x_warped, optimized_flow = ofg(x)
+                    ofg_loss_ncc = criterion_ncc(x_warped, y) * weights_opt[0]
+                    ofg_loss_reg = criterion_reg(optimized_flow, y) * weights_opt[1]
+                    ofg_loss = ofg_loss_ncc + ofg_loss_reg
 
-                    optron_optimizer.zero_grad()
-                    optron_loss.backward()
-                    optron_optimizer.step()
+                    ofg_optimizer.zero_grad()
+                    ofg_loss.backward()
+                    ofg_optimizer.step()
                 
-                x_warped, optimized_flow = optron(x)
+                x_warped, optimized_flow = ofg(x)
             
                 loss_mse = criterion_mse(output[1], optimized_flow) * weights_model[0]
                 loss_reg = criterion_reg(output[1], y) * weights_model[1]
@@ -209,21 +209,21 @@ def main():
                 y_in = torch.cat((y, x), dim=1)
                 output = model(y_in)
 
-                '''initialize Optron'''
-                if optron_epoch:
-                    optron = Optron(img_size, output[1].clone().detach())
-                    optron_optimizer = optim.Adam(optron.parameters(), lr=args.optron_lr, weight_decay=0, amsgrad=True)
-                    adjust_learning_rate(optron_optimizer, epoch, max_epoch, args.optron_lr)
+                '''initialize ofg'''
+                if ofg_epoch:
+                    ofg = OFG(img_size, output[1].clone().detach())
+                    ofg_optimizer = optim.Adam(ofg.parameters(), lr=args.ofg_lr, weight_decay=0, amsgrad=True)
+                    adjust_learning_rate(ofg_optimizer, epoch, max_epoch, args.ofg_lr)
 
-                    for i in range(optron_epoch):
-                        y_warped, optimized_flow = optron(y)
-                        optron_loss_ncc = criterion_ncc(y_warped, x) * weights_opt[0]
-                        optron_loss_reg = criterion_reg(optimized_flow, x) * weights_opt[1]
-                        optron_loss = optron_loss_ncc + optron_loss_reg
+                    for i in range(ofg_epoch):
+                        y_warped, optimized_flow = ofg(y)
+                        ofg_loss_ncc = criterion_ncc(y_warped, x) * weights_opt[0]
+                        ofg_loss_reg = criterion_reg(optimized_flow, x) * weights_opt[1]
+                        ofg_loss = ofg_loss_ncc + ofg_loss_reg
 
-                        optron_optimizer.zero_grad()
-                        optron_loss.backward()
-                        optron_optimizer.step()
+                        ofg_optimizer.zero_grad()
+                        ofg_loss.backward()
+                        ofg_optimizer.step()
 
                     loss_mse = criterion_mse(optimized_flow, output[1]) * weights_model[0]
                     loss_reg = criterion_reg(output[1], x) * weights_model[1]

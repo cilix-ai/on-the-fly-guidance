@@ -2,7 +2,7 @@ import torch.nn as nn
 import utils.utils as utils
 
 
-class Optron(nn.Module):
+class OFG(nn.Module):
     """
     Optimization module for displacements field
     Used to provide pseudo ground truth for training
@@ -14,7 +14,7 @@ class Optron(nn.Module):
             img_size (tuple): shape of the input image
             initial_flow (torch.Tensor): initial flow field
         """
-        super(Optron, self).__init__()
+        super(OFG, self).__init__()
 
         self.img_size = img_size
         self.mode = mode

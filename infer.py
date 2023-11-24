@@ -23,7 +23,7 @@ parser.add_argument('--atlas_dir', type=str, default='../datasets/IXI_data/atlas
 parser.add_argument('--save_dir', type=str, default='./infer_results/', help='The directory to save infer results')
 parser.add_argument('--model', type=str, default='TransMorph')
 parser.add_argument('--model_dir', type=str, default=None, help='The directory path that saves model weights')
-parser.add_argument('--opt', action='store_true', help="optron or not")
+parser.add_argument('--ofg', action='store_true', help="use ofg or not")
 args = parser.parse_args()
 
 

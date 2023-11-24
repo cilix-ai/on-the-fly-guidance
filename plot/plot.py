@@ -63,7 +63,7 @@ def main():
     model.eval()
     model.cuda()
     
-    # load weights of model with Optron
+    # load weights of model with ofg
     best_model = torch.load(model_opt_dir + natsorted(os.listdir(model_opt_dir))[model_idx])['state_dict']
     model_opt.load_state_dict(best_model)
     model_opt.eval()
@@ -135,14 +135,14 @@ def main():
 
     # save volumes and use other apps, like 3D-slicer, to open
     var = [x, y, x_seg, y_seg, x_def, x_def_opt, def_seg, def_seg_opt, flow[None, ...].transpose(3, 4, 2, 0, 1), flow_opt[None, ...].transpose(3, 4, 2, 0, 1)]
-    file_name = ['x', 'y', 'x_seg', 'y_seg', 'x_def', 'x_def_optron', 'def_seg', 'def_seg_optron', 'disp', 'disp_optron']
+    file_name = ['x', 'y', 'x_seg', 'y_seg', 'x_def', 'x_def_ofg', 'def_seg', 'def_seg_ofg', 'disp', 'disp_ofg']
     for d, name in list(zip(var, file_name)):
         nib_write(d, save_dir+name+'.nii.gz')
     
     # save images
     idx = 0
     var = [x, y, x_def, x_def_opt, rgb, rgb_opt, def_grid, def_grid_opt]
-    file_name = ['fixed', 'moving', 'warped', 'warped_optron', 'def_field', 'def_field_optron', 'def_grid', 'def_grid_optron']
+    file_name = ['fixed', 'moving', 'warped', 'warped_ofg', 'def_field', 'def_field_ofg', 'def_grid', 'def_grid_ofg']
     for v, name in list(zip(var, file_name)):
         plt.figure(++idx)
         plt.axis('off')

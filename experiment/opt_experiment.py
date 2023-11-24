@@ -26,17 +26,17 @@ parser.add_argument('--save_dir', type=str, default='./results/')
 parser.add_argument('--dataset', type=str, default='IXI')
 parser.add_argument('--atlas_dir', type=str, default='../autodl-fs/IXI_data/atlas.pkl')
 parser.add_argument('--model', type=str, default='TransMorph')
-parser.add_argument('--model_dir', type=str, default='../VoxelMorph-IXI/optron/experiments/VoxelMorph_IXI_opt/')
+parser.add_argument('--model_dir', type=str, default='../VoxelMorph-IXI/ofg/experiments/VoxelMorph_IXI_opt/')
 parser.add_argument('--opt', action='store_true', help="whether use optimizer during training")
 parser.add_argument('--debug', action='store_true', help="if true, only infer the first val pair and save the deformation field")
-parser.add_argument('--optron_epoch', type=int, default=10)
-parser.add_argument('--optron_model', type=str, default="CNNOpt")
-parser.add_argument('--optron_lr', type=float, default=1e-1)
+parser.add_argument('--ofg_epoch', type=int, default=10)
+parser.add_argument('--ofg_model', type=str, default="CNNOpt")
+parser.add_argument('--ofg_lr', type=float, default=1e-1)
 
 args = parser.parse_args()
 
 def main():
-    csv_name = args.model + args.optron_model + '.csv'
+    csv_name = args.model + args.ofg_model + '.csv'
     
     save_dir = args.save_dir + args.dataset + '/'
     # if not os.path.exists(save_dir + 'deformation_fields/'):
@@ -89,15 +89,15 @@ def main():
     eval_det_opt = utils.AverageMeter()
 
     print("Start Inferring\n")
-    if args.optron_model == "CNNOpt":
-        optron = CNNOpt(img_size, in_channels=5, out_channels=3, start_channels=7).cuda()
-    elif args.optron_model == "CascadeOpt":
-        optron = CascadeOpt_Vxm(img_size).cuda()
+    if args.ofg_model == "CNNOpt":
+        ofg = CNNOpt(img_size, in_channels=5, out_channels=3, start_channels=7).cuda()
+    elif args.ofg_model == "CascadeOpt":
+        ofg = CascadeOpt_Vxm(img_size).cuda()
         for i in range(2):
-            optron.blocks[i].load_state_dict(best_model)
+            ofg.blocks[i].load_state_dict(best_model)
             print("load one block")
 
-    optron_optimizer = optim.Adam(optron.parameters(), lr=args.optron_lr, weight_decay=0, amsgrad=True)
+    ofg_optimizer = optim.Adam(ofg.parameters(), lr=args.ofg_lr, weight_decay=0, amsgrad=True)
 
     criterion_ncc = losses.NCC_vxm()
     criterion_reg = losses.Grad3d(penalty='l2')
@@ -107,7 +107,7 @@ def main():
         idx = 0
         for data in test_loader:
             model.eval()
-            optron.train()
+            ofg.train()
             data = [t.cuda() for t in data]
             x = data[0]
             y = data[1]
@@ -119,15 +119,15 @@ def main():
             
             """Optimizer"""
             
-            for i in range(args.optron_epoch):
-                x_warped, optimized_flow = optron(torch.cat([x_in.clone().detach()], dim=1))
+            for i in range(args.ofg_epoch):
+                x_warped, optimized_flow = ofg(torch.cat([x_in.clone().detach()], dim=1))
                 loss_ncc = criterion_ncc(x_warped, y)
                 loss_reg = criterion_reg(optimized_flow, y)
                 loss = loss_ncc + loss_reg
 
-                optron_optimizer.zero_grad()
+                ofg_optimizer.zero_grad()
                 loss.backward()
-                optron_optimizer.step()
+                ofg_optimizer.step()
 
             if args.debug:
                 # save deformation field

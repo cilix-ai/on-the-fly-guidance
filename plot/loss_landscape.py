@@ -13,7 +13,7 @@ from models.ViTVNet import ViTVNet
 from models.TransMorph import CONFIGS as CONFIGS_TM
 from models.TransMorph import TransMorph
 from models.VoxelMorph import VoxelMorph
-from models.Optron import Optron
+from models.OFG import OFG
 import utils.utils as utils
 import utils.losses as losses
 import argparse
@@ -140,23 +140,23 @@ def compute_loss(model, dataloader):
 
         if args.strategy == 'OFG':
             '''initialize OFG'''
-            optron = Optron(img_size, output[1].clone().detach())
-            optron_optimizer = optim.Adam(optron.parameters(), lr=1e-1, weight_decay=0, amsgrad=True)
+            ofg = OFG(img_size, output[1].clone().detach())
+            ofg_optimizer = optim.Adam(ofg.parameters(), lr=1e-1, weight_decay=0, amsgrad=True)
 
             for _ in range(10):
-                x_warped, optimized_flow = optron(x)
-                optron_loss_ncc = criterion_ncc(x_warped, y) * 1
-                optron_loss_reg = criterion_reg(optimized_flow, y) * 1
-                optron_loss = optron_loss_ncc + optron_loss_reg
+                x_warped, optimized_flow = ofg(x)
+                ofg_loss_ncc = criterion_ncc(x_warped, y) * 1
+                ofg_loss_reg = criterion_reg(optimized_flow, y) * 1
+                ofg_loss = ofg_loss_ncc + ofg_loss_reg
 
-                optron_optimizer.zero_grad()
-                optron_loss.backward()
-                optron_optimizer.step()
+                ofg_optimizer.zero_grad()
+                ofg_loss.backward()
+                ofg_optimizer.step()
 
-            x_warped, optimized_flow = optron(x)
+            x_warped, optimized_flow = ofg(x)
 
         with torch.no_grad():
-            if args.strategy == 'optron':
+            if args.strategy == 'OFG':
                 loss_mse = criterion_mse(output[1], optimized_flow) * 1
                 loss_reg = criterion_reg(output[1], y) * 0.02
                 loss = loss_mse + loss_reg

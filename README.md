@@ -7,11 +7,12 @@
 OFG is a general training framework that provides an alternative to weakly-supervised and unsupervised training for image registration models. By iteratively optimizing the prediction result of the trained registration model on-the-fly, OFG introduces pseudo ground truth to an unsupervised training process. This supervision provides more direct guidance towards model training compared with unsupervised methods.
 
 ## Overall Architecture
-<img width="1020" alt="optron-simple-trans" src="https://github.com/miraclefactory/optron/assets/89094576/fb6f9dd1-4fe2-42a8-969a-64e04d0ffe75">
+<img width="932" alt="ofg" src="https://github.com/miraclefactory/on-the-fly-guidance/assets/89094576/409cde65-02bc-4332-b5eb-24ac5099ce4f">
+
 OFG is a two stage training method, integrating optimization-based methods with registration models. It optimize the model's output in training time, this process generates a pseudo label on-the-fly, which will provide supervision for the model, yielding a model with better registration performance.
 
 ## Performance Benchmark
-<img width="564" alt="optron-bench" src="https://github.com/miraclefactory/optron/assets/89094576/21ac1af3-24e6-4763-89a2-86744c021ac5">
+<img width="792" alt="hero" src="https://github.com/miraclefactory/on-the-fly-guidance/assets/89094576/9fe81ae2-a03d-4036-bbb7-af0b32595dab">
 
 OFG consistently improves the registration methods it is used on, and achieves state-of-the-art performance. It has better trainability than unsupervised methods while not using any manually added labels.
 

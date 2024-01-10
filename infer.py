@@ -41,6 +41,9 @@ def main():
     img_size = (160, 192, 160) if args.dataset == "LPBA" else (160, 192, 224)
     if args.model == "TransMorph":
         config = CONFIGS_TM['TransMorph']
+        if args.dataset == 'LPBA':
+            config.img_size = img_size
+            config.window_size = (5, 6, 5, 5)
         model = TransMorph.TransMorph(config)
     elif args.model == "VoxelMorph":
         model = VoxelMorph(img_size)

@@ -1,10 +1,10 @@
-import os, glob, random
+import os, glob, random, json
 import torch
 import numpy as np
 import SimpleITK as sitk
 from torch.utils.data import Dataset
 from .data_utils import pkload
-
+import nibabel as nib
 
 class IXIBrainDataset(Dataset):
     def __init__(self, data_path, atlas_path, transforms):
@@ -190,3 +190,57 @@ class LPBAInferDataset(Dataset):
     def __len__(self):
         return len(self.paths)
     
+class AbdomenCTCT0(Dataset):
+    def __init__(self, path, img_dir, labels_dir):
+        with open(path, 'r') as f:
+            pair = json.load(f)
+        self.pair = pair['pairs']
+        self.img_dir = img_dir
+        self.labels_dir = labels_dir
+
+    def __getitem__(self, index):
+        pair = self.pair[index]
+        x_path = self.img_dir + 'AbdomenCTCT_' + str(pair[0]).zfill(4) + '_0000.nii.gz'
+        y_path = self.img_dir + 'AbdomenCTCT_' + str(pair[1]).zfill(4) + '_0000.nii.gz'
+        x_label_path = self.labels_dir + 'AbdomenCTCT_' + str(pair[0]).zfill(4) + '_0000.nii.gz'
+        y_label_path = self.labels_dir + 'AbdomenCTCT_' + str(pair[1]).zfill(4) + '_0000.nii.gz'
+
+        # x = torch.from_numpy(nib.load(x_path).get_fdata()).cuda().float() / 500
+
+        x = sitk.GetArrayFromImage(sitk.ReadImage(x_path))[None, ...]
+        y = sitk.GetArrayFromImage(sitk.ReadImage(y_path))[None, ...]
+        x = torch.from_numpy(x).cuda().float() / 500
+        y = torch.from_numpy(y).cuda().float() / 500
+        x_seg = sitk.GetArrayFromImage(sitk.ReadImage(x_label_path))[None, ...]
+        y_seg = sitk.GetArrayFromImage(sitk.ReadImage(y_label_path))[None, ...]
+        x_seg = torch.from_numpy(x_seg).cuda().float()
+
+        return x, y, x_seg, y_seg
+
+    def __len__(self):
+        return len(self.pair)
+        
+class AbdomenCTCT(Dataset):
+    def __init__(self, path, img_dir, labels_dir):
+        with open(path, 'r') as f:
+            pair = json.load(f)
+        self.pair = pair['pairs']
+        self.img_dir = img_dir
+        self.labels_dir = labels_dir
+
+    def __getitem__(self, index):
+        pair = self.pair[index]
+        x_path = self.img_dir + 'AbdomenCTCT_' + str(pair[0]).zfill(4) + '_0000.nii.gz'
+        y_path = self.img_dir + 'AbdomenCTCT_' + str(pair[1]).zfill(4) + '_0000.nii.gz'
+        x_label_path = self.labels_dir + 'AbdomenCTCT_' + str(pair[0]).zfill(4) + '_0000.nii.gz'
+        y_label_path = self.labels_dir + 'AbdomenCTCT_' + str(pair[1]).zfill(4) + '_0000.nii.gz'
+
+        x = torch.from_numpy(nib.load(x_path).get_fdata()[None, ...]).cuda().float() / 500
+        y = torch.from_numpy(nib.load(y_path).get_fdata()[None, ...]).cuda().float() / 500
+        x_seg = torch.from_numpy(nib.load(x_label_path).get_fdata()[None, ...]).cuda().long()
+        y_seg = torch.from_numpy(nib.load(y_label_path).get_fdata()[None, ...]).cuda().long()
+
+        return x, y, x_seg, y_seg
+
+    def __len__(self):
+        return len(self.pair)

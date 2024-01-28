@@ -1,4 +1,5 @@
 import os, glob
+import os.path as osp
 import numpy as np
 from natsort import natsorted
 
@@ -32,20 +33,20 @@ parser = argparse.ArgumentParser()
 
 parser.add_argument('--batch_size', type=int, default=1)
 
-parser.add_argument('--train_dir', type=str, default='../autodl-tmp/IXI_data/Train/')
-parser.add_argument('--val_dir', type=str, default='../autodl-tmp/IXI_data/Val/')
+parser.add_argument('--train_dir', type=str, default='Path to AbdomenCTCT/')
+parser.add_argument('--val_dir', type=str, default='Val/')
 parser.add_argument('--label_dir', type=str, default='../LPBA40/label/')
-parser.add_argument('--dataset', type=str, default='IXI')
-parser.add_argument('--atlas_dir', type=str, default='../autodl-tmp/IXI_data/atlas.pkl')
+parser.add_argument('--dataset', type=str, default='AbdomenCTCT')
+parser.add_argument('--atlas_dir', type=str, default='atlas.pkl')
 
-parser.add_argument('--model', type=str, default='TransMorph')
+parser.add_argument('--model', type=str, default='VoxelMorph')
 
 parser.add_argument('--training_lr', type=float, default=1e-4)
 parser.add_argument('--ofg_lr', type=float, default=1e-1)
 parser.add_argument('--epoch_start', type=int, default=0)
 parser.add_argument('--max_epoch', type=int, default=500)
 
-parser.add_argument('--ofg_epoch', type=int, default=10, help='the number of iterations in optimization, 0 represents no optimization')
+parser.add_argument('--ofg_epoch', type=int, default=0, help='the number of iterations in optimization, 0 represents no optimization')
 
 parser.add_argument('--weight_model', type=float, default=0.02)
 parser.add_argument('--weight_opt', type=float, default=1)
@@ -60,6 +61,9 @@ def load_model(img_size):
         if args.dataset == 'LPBA':
             config.img_size = img_size
             config.window_size = (5, 6, 5, 5)
+        elif args.dataset == 'AbdomenCTCT':
+            config.img_size = img_size
+            # config.window_size = (5, 6, 8, 8)
         model = TransMorph(config)
     elif args.model == 'VoxelMorph':
         model = VoxelMorph(img_size)
@@ -87,6 +91,9 @@ def load_data():
         val_composed = transforms.Compose([trans.Seg_norm(), trans.NumpyType((np.float32, np.int16))])
         train_set = datasets.LPBADataset(glob.glob(args.train_dir + '*.nii.gz'), args.atlas_dir, transforms=train_composed)
         val_set = datasets.LPBAInferDataset(glob.glob(args.val_dir + '*.nii.gz'), args.atlas_dir, args.label_dir, transforms=val_composed)
+    elif args.dataset == "AbdomenCTCT":
+        train_set = datasets.AbdomenCTCT(path=osp.join(args.train_dir, 'train.json'), img_dir=osp.join(args.train_dir, 'imagesTr/'), labels_dir=osp.join(args.train_dir, 'labelsTr/'))
+        val_set = datasets.AbdomenCTCT(path=osp.join(args.train_dir, 'test.json'), img_dir=osp.join(args.train_dir, 'imagesTr/'), labels_dir=osp.join(args.train_dir, 'labelsTr/'))
 
     train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, num_workers=0, pin_memory=False)
     val_loader = DataLoader(val_set, batch_size=1, shuffle=False, num_workers=0, pin_memory=False, drop_last=True)
@@ -104,13 +111,16 @@ def main():
     weights_model = [1, args.weight_model] # loss weighs of model loss
     weights_opt = [1, args.weight_opt] # loss weights of optimizer
 
-    save_dir = '{}_{}{}/'.format(args.model, args.dataset, '_opt' if ofg_epoch else '')
+    save_dir = '{}_{}{}_bio/'.format(args.model, args.dataset, '_opt' if ofg_epoch else '')
     if not os.path.exists('checkpoints/'+save_dir):
         os.makedirs('checkpoints/'+save_dir)
     if not os.path.exists('logs/'+save_dir):
         os.makedirs('logs/'+save_dir)
     
-    img_size = (160, 192, 160) if args.dataset == 'LPBA' else (160, 192, 224)
+    if args.dataset == 'AbdomenCTCT':
+        img_size = (192, 160, 256)
+    else:
+        img_size = (160, 192, 160) if args.dataset == 'LPBA' else (160, 192, 224)
     
     '''
     initialize model
@@ -175,9 +185,14 @@ def main():
 
                 for i in range(args.ofg_epoch):
                     x_warped, optimized_flow = ofg(x)
-                    ofg_loss_ncc = criterion_ncc(x_warped, y) * weights_opt[0]
-                    ofg_loss_reg = criterion_reg(optimized_flow, y) * weights_opt[1]
-                    ofg_loss = ofg_loss_ncc + ofg_loss_reg
+                    if args.dataset == "AbdomenCTCT":
+                        ofg_loss_mse = criterion_mse(x_warped, y) * weights_model[0]
+                        ofg_loss_reg = criterion_reg(optimized_flow, y) * weights_model[1]
+                        ofg_loss = ofg_loss_mse + ofg_loss_reg
+                    else:
+                        ofg_loss_ncc = criterion_ncc(x_warped, y) * weights_opt[0]
+                        ofg_loss_reg = criterion_reg(optimized_flow, y) * weights_opt[1]
+                        ofg_loss = ofg_loss_ncc + ofg_loss_reg
 
                     ofg_optimizer.zero_grad()
                     ofg_loss.backward()
@@ -191,11 +206,18 @@ def main():
                 loss_vals = [loss_mse, loss_reg]
                 loss_all.update(loss.item(), y.numel())
             else:
-                loss_ncc = criterion_ncc(output[0], y)
-                loss_reg = criterion_reg(output[1], y)
-                loss = loss_ncc + loss_reg
-                loss_vals = [loss_ncc, loss_reg]
-                loss_all.update(loss.item(), y.numel())
+                if args.dataset == "AbdomenCTCT":
+                    loss_mse = criterion_mse(output[0], y) * weights_model[0]
+                    loss_reg = criterion_reg(output[1], y) * weights_model[1]
+                    loss = loss_mse + loss_reg
+                    loss_vals = [loss_mse, loss_reg]
+                    loss_all.update(loss.item(), y.numel())
+                else:
+                    loss_ncc = criterion_ncc(output[0], y)
+                    loss_reg = criterion_reg(output[1], y)
+                    loss = loss_ncc + loss_reg
+                    loss_vals = [loss_ncc, loss_reg]
+                    loss_all.update(loss.item(), y.numel())
 
             # compute gradient and do SGD step
             adam.zero_grad()
@@ -203,9 +225,9 @@ def main():
             adam.step()
 
             '''
-            For OASIS dataset
+            For OASIS dataset and AbdomenCTCT dataset
             '''
-            if args.dataset == "OASIS":
+            if args.dataset == "OASIS" or args.dataset == "AbdomenCTCT":
                 y_in = torch.cat((y, x), dim=1)
                 output = model(y_in)
 
@@ -217,9 +239,15 @@ def main():
 
                     for i in range(ofg_epoch):
                         y_warped, optimized_flow = ofg(y)
-                        ofg_loss_ncc = criterion_ncc(y_warped, x) * weights_opt[0]
-                        ofg_loss_reg = criterion_reg(optimized_flow, x) * weights_opt[1]
-                        ofg_loss = ofg_loss_ncc + ofg_loss_reg
+
+                        if args.dataset == "AbdomenCTCT":
+                            ofg_loss_mse = criterion_mse(y_warped, x) * weights_model[0]
+                            ofg_loss_reg = criterion_reg(optimized_flow, x) * weights_model[1]
+                            ofg_loss = ofg_loss_mse + ofg_loss_reg
+                        else:
+                            ofg_loss_ncc = criterion_ncc(y_warped, x) * weights_opt[0]
+                            ofg_loss_reg = criterion_reg(optimized_flow, x) * weights_opt[1]
+                            ofg_loss = ofg_loss_ncc + ofg_loss_reg
 
                         ofg_optimizer.zero_grad()
                         ofg_loss.backward()
@@ -230,10 +258,17 @@ def main():
                     loss = loss_mse + loss_reg
                     loss_vals = [loss_mse, loss_reg]
                 else:
-                    loss_ncc = criterion_ncc(output[0], x)
-                    loss_reg = criterion_reg(output[1], x)
-                    loss = loss_ncc + loss_reg
-                    loss_vals = [loss_ncc, loss_reg]
+                    if args.dataset == "AbdomenCTCT":
+                        loss_mse = criterion_mse(output[0], x) * weights_model[0]
+                        loss_reg = criterion_reg(output[1], x) * weights_model[1]
+                        loss = loss_mse + loss_reg
+                        loss_vals = [loss_mse, loss_reg]
+                        loss_all.update(loss.item(), y.numel())
+                    else:
+                        loss_ncc = criterion_ncc(output[0], x)
+                        loss_reg = criterion_reg(output[1], x)
+                        loss = loss_ncc + loss_reg
+                        loss_vals = [loss_ncc, loss_reg]
                 
                 loss_all.update(loss.item(), x.numel())
                 adam.zero_grad()
@@ -265,6 +300,10 @@ def main():
                     dsc = utils.dice_IXI(def_out.long(), y_seg.long())
                 elif args.dataset == "LPBA":
                     dsc = utils.dice_LPBA(y_seg.cpu().detach().numpy(), def_out[0, 0, ...].cpu().detach().numpy())
+                elif args.dataset == "AbdomenCTCT":
+                    dsc_1 = utils.dice_AbdomenCTCT(y_seg.contiguous(), def_out.contiguous(), 14).cpu()
+                    dsc_ident = utils.dice_AbdomenCTCT(y_seg.contiguous(), y_seg.contiguous(), 14).cpu() * utils.dice_AbdomenCTCT(x_seg.contiguous(), x_seg.contiguous(), 14).cpu()
+                    dsc = dsc_1.sum() / (dsc_ident > 0.1).sum()
                 eval_dsc.update(dsc.item(), x.size(0))
 
                 '''update Jdet'''

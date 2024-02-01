@@ -1,12 +1,2 @@
-pystrum
 torch
-torchvision
-natsort
 numpy
-timm
-ml_collections
-scikit-image
-pandas
-nibabel
-SimpleITK
-antspyx

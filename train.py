@@ -14,12 +14,14 @@ from models.ViTVNet import ViTVNet
 from models.TransMorph import CONFIGS as CONFIGS_TM
 from models.TransMorph import TransMorph
 from models.VoxelMorph import VoxelMorph
-from models.OFG import OFG
+from OFGLoss import OFGLoss
 
 import utils.utils as utils
 import utils.losses as losses
 from utils.csv_logger import log_csv
-from utils.train_utils import adjust_learning_rate, save_checkpoint
+from utils.train_utils import (adjust_learning_rate, 
+                               calc_learning_rate, 
+                               save_checkpoint)
 
 from data import datasets, trans
 
@@ -27,7 +29,7 @@ import argparse
 
 
 '''
-parse the command line arg
+parse command line arg
 '''
 parser = argparse.ArgumentParser()
 
@@ -92,6 +94,11 @@ def load_data():
         train_set = datasets.LPBADataset(glob.glob(args.train_dir + '*.nii.gz'), args.atlas_dir, transforms=train_composed)
         val_set = datasets.LPBAInferDataset(glob.glob(args.val_dir + '*.nii.gz'), args.atlas_dir, args.label_dir, transforms=val_composed)
     elif args.dataset == "AbdomenCTCT":
+        train_composed = transforms.Compose([
+            trans.NumpyType((np.float32, np.float32)),
+            trans.RandomFlip(0),
+            transforms.Normalize(mean=[0.5], std=[0.5]),
+        ])
         train_set = datasets.AbdomenCTCT(path=osp.join(args.train_dir, 'train.json'), img_dir=osp.join(args.train_dir, 'imagesTr/'), labels_dir=osp.join(args.train_dir, 'labelsTr/'))
         val_set = datasets.AbdomenCTCT(path=osp.join(args.train_dir, 'test.json'), img_dir=osp.join(args.train_dir, 'imagesTr/'), labels_dir=osp.join(args.train_dir, 'labelsTr/'))
 
@@ -119,8 +126,10 @@ def main():
     
     if args.dataset == 'AbdomenCTCT':
         img_size = (192, 160, 256)
+    elif args.dataset == 'LPBA':
+        img_size = (160, 192, 160)
     else:
-        img_size = (160, 192, 160) if args.dataset == 'LPBA' else (160, 192, 224)
+        img_size = (160, 192, 224)
     
     '''
     initialize model
@@ -166,9 +175,7 @@ def main():
         training
         '''
         loss_all = utils.AverageMeter()
-        idx = 0
-        for data in train_loader:
-            idx += 1
+        for idx, data in enumerate(train_loader):
             model.train()
             adjust_learning_rate(adam, epoch, max_epoch, lr)
             data = [t.cuda() for t in data]
@@ -178,97 +185,48 @@ def main():
             output = model(x_in)
 
             if ofg_epoch:
-                '''initialize ofg'''
-                ofg = OFG(img_size, output[1].clone().detach())
-                ofg_optimizer = optim.Adam(ofg.parameters(), lr=args.ofg_lr, weight_decay=0, amsgrad=True)
-                adjust_learning_rate(ofg_optimizer, epoch, max_epoch, args.ofg_lr)
+                '''use ofg loss'''
+                ofg_lr = calc_learning_rate(epoch, max_epoch, args.ofg_lr)
+                criterion_ofg = OFGLoss(iter_count=ofg_epoch, reg_weight=weights_opt[1], lr=ofg_lr)
 
-                for i in range(args.ofg_epoch):
-                    x_warped, optimized_flow = ofg(x)
-                    if args.dataset == "AbdomenCTCT":
-                        ofg_loss_mse = criterion_mse(x_warped, y) * weights_model[0]
-                        ofg_loss_reg = criterion_reg(optimized_flow, y) * weights_model[1]
-                        ofg_loss = ofg_loss_mse + ofg_loss_reg
-                    else:
-                        ofg_loss_ncc = criterion_ncc(x_warped, y) * weights_opt[0]
-                        ofg_loss_reg = criterion_reg(optimized_flow, y) * weights_opt[1]
-                        ofg_loss = ofg_loss_ncc + ofg_loss_reg
-
-                    ofg_optimizer.zero_grad()
-                    ofg_loss.backward()
-                    ofg_optimizer.step()
-                
-                x_warped, optimized_flow = ofg(x)
-            
-                loss_mse = criterion_mse(output[1], optimized_flow) * weights_model[0]
+                loss_ofg = criterion_ofg(x, y, output[1]) * weights_model[0]
                 loss_reg = criterion_reg(output[1], y) * weights_model[1]
-                loss = loss_mse + loss_reg
-                loss_vals = [loss_mse, loss_reg]
-                loss_all.update(loss.item(), y.numel())
+                loss = loss_ofg + loss_reg
+                loss_vals = [loss_ofg, loss_reg]
             else:
-                if args.dataset == "AbdomenCTCT":
-                    loss_mse = criterion_mse(output[0], y) * weights_model[0]
-                    loss_reg = criterion_reg(output[1], y) * weights_model[1]
-                    loss = loss_mse + loss_reg
-                    loss_vals = [loss_mse, loss_reg]
-                    loss_all.update(loss.item(), y.numel())
-                else:
-                    loss_ncc = criterion_ncc(output[0], y)
-                    loss_reg = criterion_reg(output[1], y)
-                    loss = loss_ncc + loss_reg
-                    loss_vals = [loss_ncc, loss_reg]
-                    loss_all.update(loss.item(), y.numel())
-
-            # compute gradient and do SGD step
+                '''use ncc loss'''
+                loss_ncc = criterion_ncc(output[0], y)
+                loss_reg = criterion_reg(output[1], y)
+                loss = loss_ncc + loss_reg
+                loss_vals = [loss_ncc, loss_reg]
+                
+            loss_all.update(loss.item(), y.numel())
             adam.zero_grad()
             loss.backward()
             adam.step()
 
             '''
-            For OASIS dataset and AbdomenCTCT dataset
+            For OASIS and AbdomenCTCT, use two-way registration
             '''
             if args.dataset == "OASIS" or args.dataset == "AbdomenCTCT":
                 y_in = torch.cat((y, x), dim=1)
                 output = model(y_in)
 
-                '''initialize ofg'''
                 if ofg_epoch:
-                    ofg = OFG(img_size, output[1].clone().detach())
-                    ofg_optimizer = optim.Adam(ofg.parameters(), lr=args.ofg_lr, weight_decay=0, amsgrad=True)
-                    adjust_learning_rate(ofg_optimizer, epoch, max_epoch, args.ofg_lr)
+                    '''use ofg loss'''
+                    ofg_lr = calc_learning_rate(epoch, max_epoch, args.ofg_lr)
+                    criterion_ofg = OFGLoss(iter_count=ofg_epoch, reg_weight=weights_opt[1], lr=ofg_lr)
 
-                    for i in range(ofg_epoch):
-                        y_warped, optimized_flow = ofg(y)
-
-                        if args.dataset == "AbdomenCTCT":
-                            ofg_loss_mse = criterion_mse(y_warped, x) * weights_model[0]
-                            ofg_loss_reg = criterion_reg(optimized_flow, x) * weights_model[1]
-                            ofg_loss = ofg_loss_mse + ofg_loss_reg
-                        else:
-                            ofg_loss_ncc = criterion_ncc(y_warped, x) * weights_opt[0]
-                            ofg_loss_reg = criterion_reg(optimized_flow, x) * weights_opt[1]
-                            ofg_loss = ofg_loss_ncc + ofg_loss_reg
-
-                        ofg_optimizer.zero_grad()
-                        ofg_loss.backward()
-                        ofg_optimizer.step()
-
-                    loss_mse = criterion_mse(optimized_flow, output[1]) * weights_model[0]
+                    loss_ofg = criterion_ofg(y, x, output[1]) * weights_model[0]
                     loss_reg = criterion_reg(output[1], x) * weights_model[1]
-                    loss = loss_mse + loss_reg
-                    loss_vals = [loss_mse, loss_reg]
+                    loss = loss_ofg + loss_reg
+                    loss_vals = [loss_ofg, loss_reg]
                 else:
-                    if args.dataset == "AbdomenCTCT":
-                        loss_mse = criterion_mse(output[0], x) * weights_model[0]
-                        loss_reg = criterion_reg(output[1], x) * weights_model[1]
-                        loss = loss_mse + loss_reg
-                        loss_vals = [loss_mse, loss_reg]
-                        loss_all.update(loss.item(), y.numel())
-                    else:
-                        loss_ncc = criterion_ncc(output[0], x)
-                        loss_reg = criterion_reg(output[1], x)
-                        loss = loss_ncc + loss_reg
-                        loss_vals = [loss_ncc, loss_reg]
+                    '''use ncc loss'''
+                    loss_ncc = criterion_ncc(output[0], x)
+                    loss_reg = criterion_reg(output[1], x)
+                    loss = loss_ncc + loss_reg
+                    loss_vals = [loss_ncc, loss_reg]
                 
                 loss_all.update(loss.item(), x.numel())
                 adam.zero_grad()
@@ -276,7 +234,8 @@ def main():
                 adam.step()
 
             current_lr = adam.state_dict()['param_groups'][0]['lr']
-            print('Epoch [{}/{}] Iter [{}/{}] - loss {:.4f}, Img Sim: {:.6f}, Reg: {:.6f}, lr: {:.6f}'.format(epoch, max_epoch, idx, len(train_loader), loss.item(), loss_vals[0].item(), loss_vals[1].item(), current_lr))
+            print('Epoch [{}/{}] Iter [{}/{}] - loss {:.4f}, Img Sim: {:.6f}, Reg: {:.6f}, lr: {:.6f}'.format(
+                epoch, max_epoch, idx, len(train_loader), loss.item(), loss_vals[0].item(), loss_vals[1].item(), current_lr))
 
 
         '''
@@ -302,7 +261,8 @@ def main():
                     dsc = utils.dice_LPBA(y_seg.cpu().detach().numpy(), def_out[0, 0, ...].cpu().detach().numpy())
                 elif args.dataset == "AbdomenCTCT":
                     dsc_1 = utils.dice_AbdomenCTCT(y_seg.contiguous(), def_out.contiguous(), 14).cpu()
-                    dsc_ident = utils.dice_AbdomenCTCT(y_seg.contiguous(), y_seg.contiguous(), 14).cpu() * utils.dice_AbdomenCTCT(x_seg.contiguous(), x_seg.contiguous(), 14).cpu()
+                    dsc_ident = utils.dice_AbdomenCTCT(y_seg.contiguous(), y_seg.contiguous(), 14).cpu() * \
+                                utils.dice_AbdomenCTCT(x_seg.contiguous(), x_seg.contiguous(), 14).cpu()
                     dsc = dsc_1.sum() / (dsc_ident > 0.1).sum()
                 eval_dsc.update(dsc.item(), x.size(0))
 

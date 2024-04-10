@@ -4,7 +4,7 @@ import utils.losses as losses
 import utils.utils as utils
 
 
-class OFG(nn.Module):
+class DeformationOptimizer(nn.Module):
     """
     Optimization module for displacements field
     Used to provide pseudo ground truth for training
@@ -16,7 +16,7 @@ class OFG(nn.Module):
             img_size (tuple): shape of the input image
             initial_flow (torch.Tensor): initial flow field
         """
-        super(OFG, self).__init__()
+        super(DeformationOptimizer, self).__init__()
 
         self.img_size = img_size
         self.mode = mode
@@ -25,6 +25,10 @@ class OFG(nn.Module):
         self.spatial_trans = utils.SpatialTransformer(self.img_size, self.mode)
 
     def forward(self, x):
+        """
+        Args:
+            x (torch.Tensor): moving image
+        """
         x_warped = self.spatial_trans(x, self.flow)
         return x_warped, self.flow
 
@@ -33,7 +37,7 @@ class OFGLoss(nn.Module):
     """
     OFG loss function
     """
-    def __init__(self, iter_count=5, reg_weight=1):
+    def __init__(self, iter_count=5, reg_weight=1, lr=0.1):
         """
         Args:
             iter_count (int): number of steps for optimization
@@ -42,6 +46,7 @@ class OFGLoss(nn.Module):
         super(OFGLoss, self).__init__()
         self.iter_count = iter_count
         self.reg_weight = reg_weight
+        self.lr = lr
         self.ncc = losses.NCC_vxm()
         self.reg = losses.Grad3d(penalty='l2')
         self.mse = nn.MSELoss()
@@ -55,19 +60,19 @@ class OFGLoss(nn.Module):
         """
         _, _, H, W, D = x.shape
         img_size = (H, W, D)
-        ofg = OFG(img_size, initial_flow)
-        ofg_optimizer = optim.Adam(self.ofg.parameters(), lr=0.1, 
-                                   weight_decay=0, amsgrad=True)
+        opt = DeformationOptimizer(img_size, initial_flow)
+        adam = optim.Adam(opt.parameters(), lr=self.lr, 
+                          weight_decay=0, amsgrad=True)
 
         for _ in range(self.iter_count):
-            x_warped, optimized_flow = ofg(x)
+            x_warped, optimized_flow = opt(x)
             loss_ncc = self.ncc(x_warped, y) * 1
             loss_reg = self.reg(optimized_flow, y) * self.reg_weight
             loss = loss_ncc + loss_reg
 
-            ofg_optimizer.zero_grad()
+            adam.zero_grad()
             loss.backward()
-            ofg_optimizer.step()
+            adam.step()
 
         ofg_loss = self.mse(optimized_flow, initial_flow)
 

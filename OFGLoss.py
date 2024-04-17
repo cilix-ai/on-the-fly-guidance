@@ -21,7 +21,7 @@ class DeformationOptimizer(nn.Module):
         self.img_size = img_size
         self.mode = mode
 
-        self.flow = nn.Parameter(initial_flow)
+        self.flow = nn.Parameter(initial_flow.clone())
         self.spatial_trans = utils.SpatialTransformer(self.img_size, self.mode)
 
     def forward(self, x):

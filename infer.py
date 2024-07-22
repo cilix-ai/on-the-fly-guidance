@@ -1,20 +1,26 @@
-import os, utils.utils as utils, glob, argparse, time, torch
-from torch.utils.data import DataLoader
-from data import datasets, trans
+import os, glob, time
 import numpy as np
-from torchvision import transforms
 from natsort import natsorted
+import nibabel as nib
+
+import torch
+from torchvision import transforms
+from torch.utils.data import DataLoader
+
 from models.ViTVNet import CONFIGS as CONFIGS_ViT
 from models.ViTVNet import ViTVNet
 from models.TransMorph import CONFIGS as CONFIGS_TM
 import models.TransMorph as TransMorph
 from models.VoxelMorph import VoxelMorph
-import argparse
-import nibabel as nib
-import time
+
+import utils.utils as utils
 from utils.csv_logger import infer_csv
 
-# parse the commandline
+from data import datasets, trans
+
+import argparse
+
+# parse command line
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', type=str, default='IXI')
 parser.add_argument('--test_dir', type=str, default='../datasets/IXI_data/Val/')
@@ -32,11 +38,11 @@ def main():
         csv_name = args.model + '_opt.csv'
     else:
         csv_name = args.model + '.csv'
-    
+
     save_dir = args.save_dir + args.dataset + '/'
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
-        
+
     """Initialize model"""
     img_size = (160, 192, 160) if args.dataset == "LPBA" else (160, 192, 224)
     if args.model == "TransMorph":
@@ -52,7 +58,7 @@ def main():
         model = ViTVNet(config_vit, img_size=img_size)
     else:
         raise ValueError("{} doesn't exist!".format(args.model))
-    
+
     reg_model = utils.register_model(img_size, 'nearest')
     reg_model.cuda()
 
@@ -66,7 +72,7 @@ def main():
     print('Best model: {}'.format(natsorted(os.listdir(model_dir))[model_idx]))
     model.load_state_dict(best_model)
     model.cuda()
-        
+
     """load test dataset"""
     test_dir = args.test_dir 
     atlas_dir = args.atlas_dir
@@ -79,16 +85,19 @@ def main():
     elif args.dataset == "LPBA":
         test_composed = transforms.Compose([trans.Seg_norm(), trans.NumpyType((np.float32, np.int16))])
         test_set = datasets.LPBAInferDataset(glob.glob(test_dir + '*.nii.gz'), atlas_dir, args.label_dir, transforms=test_composed)
+    elif args.dataset == "AbdomenCTCT":
+        # !!! for AbdomenCTCT, please supply the most outside dir as the test path, i.e., the path of the entire dataset
+        test_set = datasets.AbdomenCTCT(path=os.path.join(args.test_dir, 'test.json'), img_dir=os.path.join(args.test_dir, 'imagesTr/'), labels_dir=os.path.join(args.test_dir, 'labelsTr/'))
     else:
-        raise ValueError("Dataset name is wrong!")
+        raise ValueError("Unknown dataset")
     test_loader = DataLoader(test_set, batch_size=1, shuffle=False, num_workers=0, pin_memory=False, drop_last=True)
-    
-    """start infering"""    
+
+    """start inferring"""    
     eval_dsc_def = utils.AverageMeter()
     eval_dsc_raw = utils.AverageMeter()
     eval_det = utils.AverageMeter()
     eval_time = utils.AverageMeter()
-    
+
     print("Start Inferring\n")
     with torch.no_grad():
         idx = 0
@@ -102,35 +111,22 @@ def main():
             x_seg = data[2]
             y_seg = data[3]
 
-            x_in = torch.cat((x,y),dim=1) # predict
-            
+            x_in = torch.cat((x,y),dim=1)
+
             # evaluate infer time
             time_start = time.time()
             x_def, flow = model(x_in)
             time_end = time.time()
             eval_time.update(time_end - time_start, x.size(0))
             print("{}s".format(time_end - time_start))
-            
-            #! more accurate
-            # x_seg_oh = nn.functional.one_hot(x_seg.long(), num_classes=46)
-            # x_seg_oh = torch.squeeze(x_seg_oh, 1)
-            # x_seg_oh = x_seg_oh.permute(0, 4, 1, 2, 3).contiguous()
-            # def_out = model.spatial_trans(x_seg.float(), flow.float())
-            # x_segs = []
-            # for i in range(46):
-            #     def_seg = reg_model([x_seg_oh[:, i:i + 1, ...].float(), flow.float()])
-            #     x_segs.append(def_seg)
-            # x_segs = torch.cat(x_segs, dim=1)
-            # def_out = torch.argmax(x_segs, dim=1, keepdim=True)
-            # del x_segs, x_seg_oh
-            
+
             # evaluate Jdet
             tar = y.detach().cpu().numpy()[0, 0, :, :, :]
             jac_det = utils.jacobian_determinant_vxm(flow.detach().cpu().numpy()[0, :, :, :, :])
             Jdet = np.sum(jac_det <= 0) / np.prod(tar.shape)
             eval_det.update(Jdet, x.size(0))
             print('det < 0: {}'.format(Jdet))
-            
+
             # evaluate DSC
             def_out = reg_model([x_seg.cuda().float(), flow.cuda()])
             if args.dataset == "OASIS":
@@ -142,13 +138,21 @@ def main():
             elif args.dataset == "LPBA":
                 dsc_trans = utils.dice_LPBA(y_seg.cpu().detach().numpy(), def_out[0, 0, ...].cpu().detach().numpy())
                 dsc_raw = utils.dice_LPBA(y_seg.cpu().detach().numpy(), x_seg.cpu().detach().numpy())
+            elif args.dataset == "AbdomenCTCT":
+                dsc_1 = utils.dice_AbdomenCTCT(y_seg.contiguous(), def_out.contiguous(), 14).cpu() # trans
+                dsc_2 = utils.dice_AbdomenCTCT(y_seg.contiguous(), x_seg.contiguous(), 14).cpu() # raw
+                dsc_ident = utils.dice_AbdomenCTCT(y_seg.contiguous(), y_seg.contiguous(), 14).cpu() * \
+                            utils.dice_AbdomenCTCT(x_seg.contiguous(), x_seg.contiguous(), 14).cpu()
+                dsc_trans = dsc_1.sum() / (dsc_ident > 0.1).sum()
+                dsc_raw = dsc_2.sum() / (dsc_ident > 0.1).sum()
+
             print('Trans dsc: {:.4f}, Raw dsc: {:.4f}'.format(dsc_trans.item(),dsc_raw.item()))
             eval_dsc_def.update(dsc_trans.item(), x.size(0))
             eval_dsc_raw.update(dsc_raw.item(), x.size(0))
-            
+
             infer_csv(save_dir, csv_name, idx, dsc_raw.item(), dsc_trans.item(), Jdet, time_end - time_start)
             print()
-        
+
         print('Average:')
         print('Deformed DSC: {:.3f} +- {:.3f}, Affine DSC: {:.3f} +- {:.3f}'.format(eval_dsc_def.avg,
                                                                                     eval_dsc_def.std,
@@ -157,7 +161,7 @@ def main():
         print('deformed det: {}, std: {}'.format(eval_det.avg, eval_det.std))
         print('time: {}s'.format(eval_time.avg))
         infer_csv(save_dir, csv_name, 'avg', eval_dsc_raw.avg, eval_dsc_def.avg, eval_det.avg, eval_time.avg)
-        
+
 
 if __name__ == '__main__':
     '''

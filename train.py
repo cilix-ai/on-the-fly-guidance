@@ -199,7 +199,7 @@ def main():
                 loss_reg = criterion_reg(output[1], y)
                 loss = loss_ncc + loss_reg
                 loss_vals = [loss_ncc, loss_reg]
-                
+
             loss_all.update(loss.item(), y.numel())
             adam.zero_grad()
             loss.backward()
@@ -227,7 +227,7 @@ def main():
                     loss_reg = criterion_reg(output[1], x)
                     loss = loss_ncc + loss_reg
                     loss_vals = [loss_ncc, loss_reg]
-                
+
                 loss_all.update(loss.item(), x.numel())
                 adam.zero_grad()
                 loss.backward()

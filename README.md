@@ -9,14 +9,19 @@
 OFG is a training framework that successfully unites learning-based methods with optimization techniques to enhance the training of learning-based registration models. OFG provides guidance with pseudo ground truth to the model by optimizing the model's output on-the-fly, which allows the model to learn from the optimization process and improve its performance.
 
 ## Overall Architecture
-<img width="932" alt="ofg" src="https://github.com/miraclefactory/on-the-fly-guidance/assets/89094576/409cde65-02bc-4332-b5eb-24ac5099ce4f">
+<img width="1001" alt="ofg_arch" src="https://github.com/user-attachments/assets/941c01da-c483-44c5-96b1-f5d9614f3100">
 
 OFG is a two stage training method, integrating optimization-based methods with registration models. It optimize the model's output in training time, this process generates a pseudo label on-the-fly, which will provide supervision for the model, yielding a model with better registration performance.
 
 ## Performance Benchmark
-<img width="792" alt="hero" src="https://github.com/miraclefactory/on-the-fly-guidance/assets/89094576/9fe81ae2-a03d-4036-bbb7-af0b32595dab">
+<img width="822" alt="benchmark" src="https://github.com/user-attachments/assets/7975ee17-57f9-40e8-9c21-d90addd60870">
 
 OFG consistently improves the registration methods it is used on, and achieves state-of-the-art performance. It has better trainability than unsupervised methods while not using any manually added labels.
+
+## Registration on LPBA40
+<img width="738" alt="ofg_lpba" src="https://github.com/user-attachments/assets/9f651a5d-3dfd-44c7-99a8-f304575bca5f">
+
+OFG provides much smoother deformation while also improving DSC of registration, combining into better overall registration performance across a wide range of modalities and datasets.
 
 ## Citation
 Cite our work when comparing results:

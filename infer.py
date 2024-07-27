@@ -103,14 +103,10 @@ def main():
         idx = 0
         for data in test_loader:
             idx += 1
-            print(idx)
+            print("Test image:", idx)
             model.eval()
             data = [t.cuda() for t in data]
-            x = data[0]
-            y = data[1]
-            x_seg = data[2]
-            y_seg = data[3]
-
+            x, y, x_seg, y_seg = data[0], data[1], data[2], data[3]
             x_in = torch.cat((x,y),dim=1)
 
             # evaluate infer time
